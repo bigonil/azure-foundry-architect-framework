@@ -1,0 +1,77 @@
+import { Link } from 'react-router-dom'
+import { ArrowRight, BrainCircuit, Code2, Server, DollarSign, GitBranch, BarChart3, Shield } from 'lucide-react'
+
+const agents = [
+  { icon: Code2, name: 'Code Analyzer', desc: 'Detects languages, frameworks, cloud SDK coupling, and technical debt' },
+  { icon: Server, name: 'Infra Analyzer', desc: 'Parses Terraform, Bicep, K8s, ARM — maps services to Azure equivalents' },
+  { icon: DollarSign, name: 'Cost Optimizer', desc: 'FinOps analysis: right-sizing, reserved instances, PaaS migration savings' },
+  { icon: GitBranch, name: 'Migration Planner', desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations' },
+  { icon: BarChart3, name: 'GAP Analyzer', desc: 'Current vs target state across 7 dimensions with remediation roadmap' },
+  { icon: Shield, name: 'WAF Reviewer', desc: 'Scores architecture against all 5 Well-Architected Framework pillars' },
+]
+
+export default function HomePage() {
+  return (
+    <div className="space-y-10">
+      {/* Hero */}
+      <div className="text-center py-8">
+        <div className="inline-flex items-center gap-2 bg-blue-600/10 border border-blue-600/30 text-blue-400 text-sm px-4 py-1.5 rounded-full mb-6">
+          <BrainCircuit className="w-4 h-4" />
+          Powered by Azure AI Foundry · Follows CAF & WAF
+        </div>
+        <h1 className="text-4xl font-bold text-white mb-4">
+          Azure Foundry<br />Architect Framework
+        </h1>
+        <p className="text-gray-400 max-w-xl mx-auto text-lg leading-relaxed">
+          Multi-agent AI system for cloud architecture analysis, migration planning,
+          cost optimization, and Well-Architected Framework review.
+        </p>
+        <Link
+          to="/analysis"
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium mt-8 transition-colors"
+        >
+          Start New Analysis <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
+
+      {/* Agents */}
+      <div>
+        <h2 className="text-lg font-semibold text-white mb-4">Specialist Agents</h2>
+        <div className="grid grid-cols-3 gap-4">
+          {agents.map(({ icon: Icon, name, desc }) => (
+            <div key={name} className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
+              <div className="w-10 h-10 bg-blue-600/15 rounded-lg flex items-center justify-center mb-3">
+                <Icon className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="font-medium text-white text-sm mb-1">{name}</div>
+              <div className="text-xs text-gray-500 leading-relaxed">{desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Use Cases */}
+      <div>
+        <h2 className="text-lg font-semibold text-white mb-4">Supported Use Cases</h2>
+        <div className="grid grid-cols-2 gap-4">
+          {[
+            { title: 'AWS → Azure Migration', desc: 'Complete service mapping, wave plan, and cost comparison' },
+            { title: 'GCP → Azure Migration', desc: 'GKE to AKS, Pub/Sub to Event Hubs, Cloud SQL to Azure DB' },
+            { title: 'On-Premises Modernization', desc: 'Lift-and-shift vs re-architect decision support' },
+            { title: 'Cost Optimization', desc: 'Identify savings without migration — right-size existing Azure' },
+            { title: 'WAF Assessment', desc: 'Score your architecture and get a prioritized remediation plan' },
+            { title: 'App Modernization', desc: 'Monolith to microservices or serverless refactoring guide' },
+          ].map(({ title, desc }) => (
+            <div key={title} className="flex items-start gap-3 bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
+              <div>
+                <div className="text-sm font-medium text-white">{title}</div>
+                <div className="text-xs text-gray-500 mt-1">{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
