@@ -1,0 +1,307 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36" version="29.6.6">
+  <diagram id="afaf-architecture" name="Azure Foundry Architect Framework">
+    <mxGraphModel dx="672" dy="332" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1200" math="0" shadow="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontStyle=1;fontColor=#0078D4;" value="Azure Foundry Architect Framework — Multi-Agent Architecture" vertex="1">
+          <mxGeometry height="40" width="1860" x="20" y="15" as="geometry" />
+        </mxCell>
+        <mxCell id="10" parent="1" style="swimlane;fontStyle=1;fontSize=11;startSize=28;fillColor=#E3F2FD;strokeColor=#2496ED;strokeWidth=2;rounded=1;arcSize=3;" value="Local Development (Docker Compose)" vertex="1">
+          <mxGeometry height="620" width="255" x="20" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="11" parent="10" style="shape=mxgraph.general.user2;fillColor=#BBDEFB;strokeColor=#1565C0;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;html=1;" value="User / Browser" vertex="1">
+          <mxGeometry height="65" width="55" x="92" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="12" parent="10" style="shape=mxgraph.docker.docker;fillColor=#2496ED;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;" value="Docker" vertex="1">
+          <mxGeometry height="45" width="60" x="92" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="13" parent="10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#009639;strokeColor=#006B2B;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="nginx:1.27-alpine&#xa;Reverse Proxy + Static" vertex="1">
+          <mxGeometry height="50" width="205" x="22" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="14" parent="10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#61DAFB;strokeColor=#00B4D8;fontColor=#00214D;fontSize=10;fontStyle=1;" value="React 18 + Vite&#xa;Frontend SPA (Tailwind CSS)" vertex="1">
+          <mxGeometry height="50" width="205" x="22" y="302" as="geometry" />
+        </mxCell>
+        <mxCell id="15" parent="10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#009688;strokeColor=#00695C;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="FastAPI 0.115 + Uvicorn&#xa;API — Hot Reload" vertex="1">
+          <mxGeometry height="50" width="205" x="22" y="374" as="geometry" />
+        </mxCell>
+        <mxCell id="16" parent="10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DC382D;strokeColor=#A82A21;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="Redis 7-alpine&#xa;Session Cache (optional)" vertex="1">
+          <mxGeometry height="50" width="205" x="22" y="446" as="geometry" />
+        </mxCell>
+        <mxCell id="17" parent="10" style="text;html=1;strokeColor=#2496ED;fillColor=#DBEAFE;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" value="docker compose up --build&#xa;API: :8000  |  UI: :3000" vertex="1">
+          <mxGeometry height="40" width="220" x="15" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="20" parent="1" style="swimlane;fontStyle=1;fontSize=13;startSize=30;fillColor=#F0F7FF;strokeColor=#0078D4;strokeWidth=3;rounded=1;arcSize=2;fontColor=#0078D4;" value="Microsoft Azure" vertex="1">
+          <mxGeometry height="1050" width="1585" x="300" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="20b" parent="20" style="shape=mxgraph.azure2.azure;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#0078D4;fontSize=8;" value="Azure" vertex="1">
+          <mxGeometry height="40" width="40" x="1525" y="5" as="geometry" />
+        </mxCell>
+        <mxCell id="30" parent="20" style="swimlane;fontStyle=1;fontSize=10;startSize=26;fillColor=#E8F5E9;strokeColor=#0078D4;strokeWidth=2;rounded=1;arcSize=3;dashed=1;" value="Azure Container Apps Environment (cae-afaf-dev) — VNet: 10.0.0.0/23" vertex="1">
+          <mxGeometry height="960" width="740" x="15" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="30b" parent="30" style="shape=mxgraph.azure2.container-instances;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#0078D4;fontSize=8;" value="Container Apps" vertex="1">
+          <mxGeometry height="40" width="40" x="685" y="3" as="geometry" />
+        </mxCell>
+        <mxCell id="30c" parent="30" style="shape=mxgraph.azure2.container-registries;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=8;" value="ACR" vertex="1">
+          <mxGeometry height="40" width="40" x="620" y="3" as="geometry" />
+        </mxCell>
+        <mxCell id="31" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#00897B;strokeColor=#004D40;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="&lt;b&gt;API Container App&lt;/b&gt; — FastAPI + Uvicorn 2 workers&#xa;CPU: 0.5 core | RAM: 1 Gi | Scale: 0 → 10 replicas | TLS termination" vertex="1">
+          <mxGeometry height="60" width="700" x="20" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="32" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#0078D4;strokeColor=#003770;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="🧠  Orchestrator Agent — Phase planning | Context propagation | Parallel execution (asyncio) | Report synthesis" vertex="1">
+          <mxGeometry height="55" width="700" x="20" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="33" parent="30" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontStyle=2;fontColor=#1565C0;" value="⬇ Phase 1 — Sequential (produce shared context)" vertex="1">
+          <mxGeometry height="18" width="350" x="20" y="205" as="geometry" />
+        </mxCell>
+        <mxCell id="34" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#2E7D32;strokeColor=#1B5E20;fontColor=#ffffff;fontSize=9;" value="&lt;b&gt;Code Analyzer&lt;/b&gt;&#xa;Languages · Frameworks&#xa;Cloud SDK coupling&#xa;Tech debt · 12-Factor" vertex="1">
+          <mxGeometry height="95" width="175" x="20" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="35" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#E65100;strokeColor=#BF360C;fontColor=#ffffff;fontSize=9;" value="&lt;b&gt;Infra Analyzer&lt;/b&gt;&#xa;Terraform/Bicep/ARM&#xa;K8s manifests&#xa;Service mapping" vertex="1">
+          <mxGeometry height="95" width="175" x="215" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="36" parent="30" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontStyle=2;fontColor=#1565C0;" value="⬇ Phase 2 — Parallel (asyncio Semaphore, max 4)" vertex="1">
+          <mxGeometry height="18" width="350" x="20" y="335" as="geometry" />
+        </mxCell>
+        <mxCell id="37" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#6A1B9A;strokeColor=#4A148C;fontColor=#ffffff;fontSize=9;" value="&lt;b&gt;Cost Optimizer&lt;/b&gt;&#xa;FinOps analysis&#xa;Right-sizing&#xa;Reserved Instance ROI" vertex="1">
+          <mxGeometry height="95" width="175" x="20" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="38" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#B71C1C;strokeColor=#7F0000;fontColor=#ffffff;fontSize=9;" value="&lt;b&gt;Migration Planner&lt;/b&gt;&#xa;CAF 6Rs Strategy&#xa;Wave planning&#xa;Risk register" vertex="1">
+          <mxGeometry height="95" width="175" x="215" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="39" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#BF360C;strokeColor=#870000;fontColor=#ffffff;fontSize=9;" value="&lt;b&gt;GAP Analyzer&lt;/b&gt;&#xa;7 Dimensions&#xa;Maturity score 1-5&#xa;Remediation roadmap" vertex="1">
+          <mxGeometry height="95" width="175" x="410" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="40" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#37474F;strokeColor=#102027;fontColor=#ffffff;fontSize=9;" value="&lt;b&gt;WAF Reviewer&lt;/b&gt;&#xa;5 WAF Pillars&#xa;Score 1-5 per pillar&#xa;Quick wins list" vertex="1">
+          <mxGeometry height="95" width="175" x="410" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="41" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#0D47A1;strokeColor=#002171;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="📋  Final Report Synthesis — Executive Summary · Maturity Score · Top 10 Actions · Migration Roadmap · Cost Savings" vertex="1">
+          <mxGeometry height="55" width="700" x="20" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="42" parent="30" style="shape=mxgraph.azure2.azure-cosmos-db;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure Cosmos DB&#xa;State &amp; Reports" vertex="1">
+          <mxGeometry height="65" width="65" x="20" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="42b" parent="30" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#0078D4;fontSize=8;" value="Container: sessions (7d TTL)&#xa;Container: reports (30d TTL)" vertex="1">
+          <mxGeometry height="40" width="200" x="100" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="43" parent="30" style="shape=mxgraph.azure2.key-vaults;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Key Vault" vertex="1">
+          <mxGeometry height="65" width="65" x="350" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="44" parent="30" style="shape=mxgraph.azure2.log-analytics-workspaces;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Log Analytics" vertex="1">
+          <mxGeometry height="65" width="65" x="490" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="45" parent="30" style="shape=mxgraph.azure2.application-insights;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="App Insights" vertex="1">
+          <mxGeometry height="65" width="65" x="620" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="46" parent="30" style="text;html=1;strokeColor=#C62828;fillColor=#FFCDD2;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" value="🔑 Managed Identity (System Assigned) — No secrets in environment variables&#xa;RBAC: Cognitive Services OpenAI User | Search Index Data Reader | Key Vault Secrets User" vertex="1">
+          <mxGeometry height="40" width="700" x="20" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="47" parent="30" style="shape=mxgraph.azure2.virtual-networks;fillColor=#0078D4;strokeColor=none;html=1;align=left;verticalLabelPosition=middle;labelPosition=right;verticalAlign=middle;fontColor=#000000;fontSize=9;" value="Azure Virtual Network  10.0.0.0/16  |  snet-container-apps: 10.0.0.0/23  |  snet-private-endpoints: 10.0.2.0/24" vertex="1">
+          <mxGeometry height="55" width="55" x="20" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="50" parent="20" style="swimlane;fontStyle=1;fontSize=11;startSize=28;fillColor=#E8F4FD;strokeColor=#0078D4;strokeWidth=2;rounded=1;arcSize=3;" value="Azure AI Foundry Platform" vertex="1">
+          <mxGeometry height="440" width="790" x="775" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="51" parent="50" style="shape=mxgraph.azure2.machine-learning;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="AI Foundry Hub&#xa;hub-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="30" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="51b" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontSize=8;" value="SystemAssigned MI&#xa;Storage Account&#xa;KeyVault connected" vertex="1">
+          <mxGeometry height="40" width="100" x="15" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="52" parent="50" style="shape=mxgraph.azure2.machine-learning;fillColor=#50E6FF;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="AI Project&#xa;project-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="170" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="52b" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontSize=8;" value="conn-openai (AAD)&#xa;conn-search (AAD)&#xa;Agent Service" vertex="1">
+          <mxGeometry height="40" width="100" x="155" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="53" parent="50" style="shape=mxgraph.azure2.cognitive-services;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure OpenAI&#xa;oai-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="330" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="53b" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;strokeColor=#003770;fontColor=#ffffff;fontSize=9;" value="gpt-4o (2024-11-20)&#xa;GlobalStandard — 100K TPM" vertex="1">
+          <mxGeometry height="28" width="190" x="315" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="53c" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#50E6FF;strokeColor=#0078D4;fontColor=#003067;fontSize=9;" value="gpt-4o-mini (2024-07-18)&#xa;GlobalStandard — 200K TPM" vertex="1">
+          <mxGeometry height="28" width="190" x="315" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="53d" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=8;" value="RAI Policy: Microsoft.DefaultV2" vertex="1">
+          <mxGeometry height="20" width="190" x="315" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="54" parent="50" style="shape=mxgraph.azure2.cognitive-search;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure AI Search&#xa;srch-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="565" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="54b" parent="50" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=8;fontColor=#555555;" value="Semantic Search — Standard&#xa;2 replicas (prod)" vertex="1">
+          <mxGeometry height="28" width="140" x="530" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="54c" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontSize=9;" value="📑 Index: caf-guidelines" vertex="1">
+          <mxGeometry height="24" width="195" x="530" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="54d" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontSize=9;" value="📑 Index: waf-pillars" vertex="1">
+          <mxGeometry height="24" width="195" x="530" y="189" as="geometry" />
+        </mxCell>
+        <mxCell id="54e" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontSize=9;" value="📑 Index: migration-patterns" vertex="1">
+          <mxGeometry height="24" width="195" x="530" y="218" as="geometry" />
+        </mxCell>
+        <mxCell id="55" parent="50" style="text;html=1;strokeColor=#1565C0;fillColor=#BBDEFB;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" value="🔐 AAD Authentication (Managed Identity) — Local auth disabled in prod — No API Keys stored" vertex="1">
+          <mxGeometry height="28" width="760" x="15" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="56" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0078D4;strokeColor=#003770;fontColor=#ffffff;fontSize=9;fontStyle=1;" value="Azure AI Agent Service&#xa;(Foundry Mode)" vertex="1">
+          <mxGeometry height="50" width="190" x="15" y="315" as="geometry" />
+        </mxCell>
+        <mxCell id="57" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#50E6FF;strokeColor=#0078D4;fontColor=#003067;fontSize=9;fontStyle=1;" value="Direct Azure OpenAI&#xa;(Low Latency Mode)" vertex="1">
+          <mxGeometry height="50" width="190" x="220" y="315" as="geometry" />
+        </mxCell>
+        <mxCell id="58" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontColor=#003067;fontSize=9;fontStyle=1;" value="FileSearch Tool&#xa;RAG over indexes" vertex="1">
+          <mxGeometry height="50" width="160" x="425" y="315" as="geometry" />
+        </mxCell>
+        <mxCell id="59" parent="50" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#0078D4;fontColor=#003067;fontSize=9;fontStyle=1;" value="CodeInterpreter Tool&#xa;Static analysis" vertex="1">
+          <mxGeometry height="50" width="160" x="600" y="315" as="geometry" />
+        </mxCell>
+        <mxCell id="60" parent="20" style="swimlane;fontStyle=1;fontSize=10;startSize=24;fillColor=#FFF8E1;strokeColor=#F57F17;strokeWidth=2;rounded=1;arcSize=3;" value="Data Layer" vertex="1">
+          <mxGeometry height="230" width="380" x="775" y="515" as="geometry" />
+        </mxCell>
+        <mxCell id="61" parent="60" style="shape=mxgraph.azure2.azure-cosmos-db;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure Cosmos DB&#xa;cosmos-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="30" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="61b" parent="60" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=8;fontColor=#555555;" value="Serverless (dev/staging)&#xa;Provisioned + ZRS (prod)&#xa;Continuous backup (prod)" vertex="1">
+          <mxGeometry height="45" width="170" x="115" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="61c" parent="60" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontSize=8;" value="sessions — /session_id — TTL 7d" vertex="1">
+          <mxGeometry height="20" width="240" x="115" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="61d" parent="60" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontSize=8;" value="reports — /project_name — TTL 30d" vertex="1">
+          <mxGeometry height="20" width="240" x="115" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="62" parent="60" style="shape=mxgraph.azure2.storage-accounts;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Storage Account&#xa;AI Hub store" vertex="1">
+          <mxGeometry height="55" width="60" x="30" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="62b" parent="60" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=8;fontColor=#555555;" value="Standard_ZRS (prod)&#xa;Standard_LRS (dev)&#xa;TLS 1.2+ · No public blob" vertex="1">
+          <mxGeometry height="45" width="185" x="105" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="70" parent="20" style="swimlane;fontStyle=1;fontSize=10;startSize=24;fillColor=#FFEBEE;strokeColor=#C62828;strokeWidth=2;rounded=1;arcSize=3;" value="Security &amp; Governance" vertex="1">
+          <mxGeometry height="230" width="390" x="1175" y="515" as="geometry" />
+        </mxCell>
+        <mxCell id="71" parent="70" style="shape=mxgraph.azure2.key-vaults;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure Key Vault&#xa;kv-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="25" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="71b" parent="70" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=8;fontColor=#555555;" value="RBAC auth (no access policies)&#xa;Soft delete 90d + Purge protect (prod)&#xa;Private endpoint (prod)" vertex="1">
+          <mxGeometry height="45" width="220" x="110" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="72" parent="70" style="shape=mxgraph.azure2.managed-identities;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Managed Identity&#xa;System Assigned" vertex="1">
+          <mxGeometry height="65" width="70" x="25" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="72b" parent="70" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=8;align=left;" value="Cognitive Services OpenAI User →  oai-afaf-dev&#xa;Search Index Data Reader     →  srch-afaf-dev&#xa;Key Vault Secrets User       →  kv-afaf-dev" vertex="1">
+          <mxGeometry height="60" width="268" x="110" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="80" parent="20" style="swimlane;fontStyle=1;fontSize=10;startSize=24;fillColor=#F3E5F5;strokeColor=#6A1B9A;strokeWidth=2;rounded=1;arcSize=3;" value="Observability — WAF Pillar: Operational Excellence" vertex="1">
+          <mxGeometry height="200" width="790" x="775" y="790" as="geometry" />
+        </mxCell>
+        <mxCell id="81" parent="80" style="shape=mxgraph.azure2.log-analytics-workspaces;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Log Analytics&#xa;log-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="30" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="81b" parent="80" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=8;" value="30d retention (dev)&#xa;90d retention (prod)" vertex="1">
+          <mxGeometry height="28" width="110" x="10" y="139" as="geometry" />
+        </mxCell>
+        <mxCell id="82" parent="80" style="shape=mxgraph.azure2.application-insights;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Application Insights&#xa;appi-afaf-dev" vertex="1">
+          <mxGeometry height="70" width="70" x="180" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="82b" parent="80" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=8;" value="Distributed tracing&#xa;Live Metrics" vertex="1">
+          <mxGeometry height="28" width="110" x="160" y="138" as="geometry" />
+        </mxCell>
+        <mxCell id="83" parent="80" style="shape=mxgraph.azure2.monitor;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure Monitor&#xa;Alerts" vertex="1">
+          <mxGeometry height="70" width="70" x="340" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="84" parent="80" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=9;" value="🔔 Alert: API error rate &gt;5% → SEV2 notification&#xa;📊 Metric: failed requests per 15min window" vertex="1">
+          <mxGeometry height="50" width="330" x="435" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="85" parent="80" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;fontSize=9;" value="Structured logging (structlog) | Correlation IDs | Request/Response timing" vertex="1">
+          <mxGeometry height="30" width="330" x="435" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="93" edge="1" parent="20" source="31" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=2;" target="32" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="94" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2E7D32;strokeWidth=1.5;fontSize=8;" target="34" value="Phase 1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="95" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#E65100;strokeWidth=1.5;fontSize=8;" target="35" value="Phase 1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="96" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6A1B9A;strokeWidth=1.5;fontSize=8;" target="37" value="Phase 2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="97" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#B71C1C;strokeWidth=1.5;fontSize=8;" target="38" value="Phase 2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="98" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#BF360C;strokeWidth=1.5;fontSize=8;" target="39" value="Phase 2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="99" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#37474F;strokeWidth=1.5;fontSize=8;" target="40" value="Phase 2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="100" edge="1" parent="20" source="34" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0D47A1;strokeWidth=1.5;" target="41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="101" edge="1" parent="20" source="35" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0D47A1;strokeWidth=1.5;" target="41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="102" edge="1" parent="20" source="37" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0D47A1;strokeWidth=1.5;" target="41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="103" edge="1" parent="20" source="38" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0D47A1;strokeWidth=1.5;" target="41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="104" edge="1" parent="20" source="39" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0D47A1;strokeWidth=1.5;" target="41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="105" edge="1" parent="20" source="40" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0D47A1;strokeWidth=1.5;" target="41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="106" edge="1" parent="20" source="32" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=2;dashed=1;fontSize=9;endArrow=open;endFill=0;" target="53" value="GPT-4o API">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="107" edge="1" parent="20" source="38" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=1.5;dashed=1;fontSize=9;endArrow=open;endFill=0;" target="54" value="RAG query">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="108" edge="1" parent="20" source="40" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=1.5;dashed=1;fontSize=9;endArrow=open;endFill=0;" target="54" value="RAG query">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="109" edge="1" parent="20" source="31" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F57F17;strokeWidth=1.5;fontSize=9;endArrow=open;endFill=0;" target="61" value="Sessions/Reports">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="110" edge="1" parent="20" source="31" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#C62828;strokeWidth=1;dashed=1;fontSize=9;endArrow=open;endFill=0;" target="71" value="KV Ref">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="111" edge="1" parent="20" source="51" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=1.5;" target="52">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="112" edge="1" parent="20" source="52" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=1.5;fontSize=8;" target="53" value="conn-openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="113" edge="1" parent="20" source="52" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=1.5;fontSize=8;" target="54" value="conn-search">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="114" edge="1" parent="20" source="31" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#6A1B9A;strokeWidth=1;dashed=1;fontSize=9;endArrow=open;endFill=0;" target="81" value="Logs/Metrics">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UDbKXd0rK4xQ_3y4ADP1-114" edge="1" parent="20" source="62" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="81" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="90" edge="1" parent="1" source="11" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2496ED;strokeWidth=2;fontSize=9;endArrow=block;endFill=1;" target="13" value="HTTP :3000">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="91" edge="1" parent="1" source="13" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#009639;strokeWidth=1.5;" target="15" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="92" edge="1" parent="1" source="11" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0078D4;strokeWidth=2.5;dashed=1;fontSize=9;endArrow=block;endFill=1;" target="31" value="HTTPS">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="155" y="165" />
+              <mxPoint x="155" y="188" />
+              <mxPoint x="440" y="188" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
