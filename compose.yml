@@ -11,6 +11,7 @@ services:
     environment:
       APP_ENV: development
       APP_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
+      MONGODB_URI: "mongodb://admin:${MONGO_ROOT_PASSWORD:-changeme_local}@mongodb:27017/architect-framework?authSource=admin"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -36,27 +37,28 @@ services:
     networks:
       - app
 
-  # Local dev: Redis for session caching (optional, replaces in-memory store)
-  redis:
-    image: redis:7-alpine
+  mongodb:
+    image: mongo:7
     ports:
-      - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme_local}
+      MONGO_INITDB_DATABASE: architect-framework
     volumes:
-      - redis_data:/data
+      - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     restart: unless-stopped
     networks:
       - app
-    profiles:
-      - full    # Only start with: docker compose --profile full up
 
 volumes:
-  redis_data:
+  mongo_data:
 
 networks:
   app:

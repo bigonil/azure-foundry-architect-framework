@@ -638,18 +638,18 @@ const ArchitectureDiagram: React.FC = () => {
           Data Layer
         </text>
 
-        {/* Cosmos DB */}
+        {/* MongoDB */}
         <g transform="translate(970, 548)">
-          <DatabaseIcon size={32} color={C.azureLight} />
+          <DatabaseIcon size={32} color="#4DB33D" />
         </g>
-        <text x={1010} y={560} fill={C.white} fontSize={10} fontWeight="700" fontFamily="system-ui,sans-serif">Azure Cosmos DB</text>
-        <text x={1010} y={573} fill="rgba(255,255,255,0.6)" fontSize={8.5} fontFamily="system-ui,sans-serif">cosmos-afaf-dev · NoSQL API</text>
-        <rect x={968} y={580} width={355} height={22} rx={4} fill="rgba(245,127,23,0.2)" stroke={C.amber} strokeWidth={1} />
-        <text x={1145} y={595} textAnchor="middle" fill={C.amber} fontSize={8} fontFamily="system-ui,sans-serif">Serverless (dev/stg) · Provisioned ZRS (prod)</text>
-        <rect x={968} y={606} width={355} height={22} rx={4} fill="rgba(245,127,23,0.15)" stroke={C.amber} strokeWidth={0.5} />
-        <text x={1145} y={621} textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize={8} fontFamily="system-ui,sans-serif">Container: sessions · partition: /session_id · TTL 7d</text>
-        <rect x={968} y={632} width={355} height={22} rx={4} fill="rgba(245,127,23,0.15)" stroke={C.amber} strokeWidth={0.5} />
-        <text x={1145} y={647} textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize={8} fontFamily="system-ui,sans-serif">Container: reports · partition: /project_name · TTL 30d</text>
+        <text x={1010} y={560} fill={C.white} fontSize={10} fontWeight="700" fontFamily="system-ui,sans-serif">MongoDB 7</text>
+        <text x={1010} y={573} fill="rgba(255,255,255,0.6)" fontSize={8.5} fontFamily="system-ui,sans-serif">ca-mongo-afaf-dev · Container App</text>
+        <rect x={968} y={580} width={355} height={22} rx={4} fill="rgba(77,179,61,0.2)" stroke="#4DB33D" strokeWidth={1} />
+        <text x={1145} y={595} textAnchor="middle" fill="#4DB33D" fontSize={8} fontFamily="system-ui,sans-serif">Azure Files persistence · 1 replica (stateful)</text>
+        <rect x={968} y={606} width={355} height={22} rx={4} fill="rgba(77,179,61,0.15)" stroke="#4DB33D" strokeWidth={0.5} />
+        <text x={1145} y={621} textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize={8} fontFamily="system-ui,sans-serif">Collection: sessions · index: session_id · TTL 7d</text>
+        <rect x={968} y={632} width={355} height={22} rx={4} fill="rgba(77,179,61,0.15)" stroke="#4DB33D" strokeWidth={0.5} />
+        <text x={1145} y={647} textAnchor="middle" fill="rgba(255,255,255,0.7)" fontSize={8} fontFamily="system-ui,sans-serif">Collection: reports · index: project_name · TTL 30d</text>
 
         {/* Storage Account */}
         <text x={974} y={680} fill={C.white} fontSize={10} fontWeight="700" fontFamily="system-ui,sans-serif">Storage Account</text>

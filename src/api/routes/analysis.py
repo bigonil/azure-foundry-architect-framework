@@ -6,23 +6,27 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.agents.orchestrator import AnalysisRequest, OrchestratorAgent
-from src.api.models.requests import AnalysisRequestBody, AnalysisType, CloudProvider
+from src.api.models.requests import AnalysisRequestBody
 from src.api.models.responses import (
     AgentResultSummary,
     AnalysisReportResponse,
     AnalysisSessionResponse,
 )
+from src.config.settings import get_settings
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
 logger = logging.getLogger(__name__)
 
-# In-memory session store (replace with Cosmos DB in production)
-_sessions: dict[str, dict[str, Any]] = {}
-_reports: dict[str, Any] = {}
+_settings = get_settings()
+_mongo_client: AsyncIOMotorClient = AsyncIOMotorClient(_settings.mongodb_uri)
+
+
+def _db():
+    return _mongo_client[_settings.mongodb_database]
 
 
 @router.post("/start", response_model=AnalysisSessionResponse, status_code=202)
@@ -47,11 +51,12 @@ async def start_analysis(
     )
 
     session_id = analysis_request.session_id
-    _sessions[session_id] = {
+    await _db()[_settings.mongodb_collection_sessions].insert_one({
+        "_id": session_id,
         "status": "running",
         "project_name": request.project_name,
         "started_at": time.time(),
-    }
+    })
 
     background_tasks.add_task(
         _run_analysis,
@@ -59,7 +64,7 @@ async def start_analysis(
         use_foundry_mode=request.use_foundry_mode,
     )
 
-    logger.info(f"Analysis session {session_id} started for project '{request.project_name}'")
+    logger.info("Analysis session %s started for project '%s'", session_id, request.project_name)
 
     return AnalysisSessionResponse(
         session_id=session_id,
@@ -72,10 +77,9 @@ async def start_analysis(
 @router.get("/{session_id}", response_model=AnalysisReportResponse)
 async def get_analysis_report(session_id: str) -> AnalysisReportResponse:
     """Retrieve the analysis report for a completed session."""
-    if session_id not in _sessions:
+    session = await _db()[_settings.mongodb_collection_sessions].find_one({"_id": session_id})
+    if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
-
-    session = _sessions[session_id]
 
     if session["status"] == "running":
         raise HTTPException(
@@ -93,11 +97,12 @@ async def get_analysis_report(session_id: str) -> AnalysisReportResponse:
             detail={"status": "failed", "error": session.get("error", "Unknown error")},
         )
 
-    report = _reports.get(session_id)
+    report = await _db()[_settings.mongodb_collection_reports].find_one({"_id": session_id})
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    return report
+    report.pop("_id", None)
+    return AnalysisReportResponse(**report)
 
 
 @router.post("/quick-scan", response_model=AnalysisReportResponse)
@@ -134,10 +139,10 @@ async def quick_scan(request: AnalysisRequestBody) -> AnalysisReportResponse:
 @router.get("/{session_id}/status")
 async def get_session_status(session_id: str) -> dict[str, Any]:
     """Get the current status of an analysis session."""
-    if session_id not in _sessions:
+    session = await _db()[_settings.mongodb_collection_sessions].find_one({"_id": session_id})
+    if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
-    session = _sessions[session_id]
     return {
         "session_id": session_id,
         "status": session["status"],
@@ -150,27 +155,34 @@ async def get_session_status(session_id: str) -> dict[str, Any]:
 @router.get("/", response_model=list[dict])
 async def list_sessions() -> list[dict]:
     """List all analysis sessions."""
+    cursor = _db()[_settings.mongodb_collection_sessions].find(
+        {}, {"_id": 1, "status": 1, "project_name": 1, "started_at": 1}
+    )
     return [
         {
-            "session_id": sid,
+            "session_id": s["_id"],
             "status": s["status"],
             "project_name": s.get("project_name"),
             "started_at": s.get("started_at"),
         }
-        for sid, s in _sessions.items()
+        async for s in cursor
     ]
 
 
 async def _run_analysis(request: AnalysisRequest, use_foundry_mode: bool = False) -> None:
     """Background task wrapper."""
+    col_sessions = _db()[_settings.mongodb_collection_sessions]
+    col_reports = _db()[_settings.mongodb_collection_reports]
     try:
         report = await _execute_analysis(request, use_foundry_mode)
-        _sessions[request.session_id]["status"] = "completed"
-        _reports[request.session_id] = report
-    except Exception as e:
-        logger.error(f"Analysis session {request.session_id} failed: {e}")
-        _sessions[request.session_id]["status"] = "failed"
-        _sessions[request.session_id]["error"] = str(e)
+        await col_sessions.update_one({"_id": request.session_id}, {"$set": {"status": "completed"}})
+        await col_reports.insert_one({"_id": request.session_id, **report.model_dump()})
+    except Exception as exc:
+        logger.error("Analysis session %s failed: %s", request.session_id, exc)
+        await col_sessions.update_one(
+            {"_id": request.session_id},
+            {"$set": {"status": "failed", "error": str(exc)}},
+        )
 
 
 async def _execute_analysis(
@@ -179,8 +191,6 @@ async def _execute_analysis(
     """Core execution logic."""
     orchestrator = OrchestratorAgent(use_foundry_mode=use_foundry_mode)
     report = await orchestrator.analyze(request)
-
-    report_dict = report.to_dict()
 
     return AnalysisReportResponse(
         session_id=report.session_id,

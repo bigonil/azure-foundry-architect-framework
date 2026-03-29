@@ -174,7 +174,7 @@ az login
 | LLM Backend | Azure OpenAI GPT-4o | Best reasoning for architecture analysis; CAF/WAF alignment |
 | Agent Framework | Azure AI Agent Service + Semantic Kernel | Native Foundry integration; tool use; file search |
 | Knowledge Base | Azure AI Search (semantic) | RAG over CAF/WAF docs; enables up-to-date guidance |
-| State Store | Cosmos DB (serverless) | Schemaless; serverless cost optimization; global distribution |
+| State Store | MongoDB 7 (Container App + Azure Files) | Open-source, portable, schemaless; no PaaS license fee |
 | API | FastAPI + async | Native asyncio for parallel agent execution |
 | Auth | Managed Identity (RBAC) | Zero secrets; WAF Security pillar compliant |
 | Hosting | Azure Container Apps | Auto-scale to 0; cost-efficient; managed TLS |

@@ -35,7 +35,8 @@ TF_RESOURCE_MAP: dict[str, str] = {
     "azurerm_kubernetes_cluster": "AKS Cluster",
     "azurerm_function_app": "Azure Functions",
     "azurerm_app_service": "App Service",
-    "azurerm_cosmosdb_account": "Cosmos DB",
+    "azurerm_cosmosdb_account": "Cosmos DB",        # legacy mapping kept for analysis
+    "azurerm_mongodb_cluster": "MongoDB Cluster",
     "azurerm_redis_cache": "Azure Cache for Redis",
     "azurerm_servicebus_namespace": "Service Bus",
     # GCP

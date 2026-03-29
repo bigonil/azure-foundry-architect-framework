@@ -28,7 +28,7 @@ FALLBACK_ESTIMATES: dict[str, float] = {
     "Azure Database for PostgreSQL": 100.0,
     "Azure Database for MySQL": 80.0,
     "Azure SQL Database": 150.0,
-    "Azure Cosmos DB": 50.0,
+    "MongoDB": 45.0,
     "Azure Cache for Redis": 55.0,
     # Networking
     "Azure Application Gateway": 130.0,

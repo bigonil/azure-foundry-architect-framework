@@ -45,12 +45,11 @@ class Settings(BaseSettings):
     azure_search_index_waf: str = "waf-pillars"
     azure_search_index_patterns: str = "migration-patterns"
 
-    # ── Cosmos DB ─────────────────────────────────────────────────────────────
-    cosmos_endpoint: str = Field(default="")
-    cosmos_key: str = Field(default="")
-    cosmos_database: str = "architect-framework"
-    cosmos_container_sessions: str = "sessions"
-    cosmos_container_reports: str = "reports"
+    # ── MongoDB ───────────────────────────────────────────────────────────────
+    mongodb_uri: str = Field(default="mongodb://admin:password@localhost:27017/architect-framework?authSource=admin")
+    mongodb_database: str = "architect-framework"
+    mongodb_collection_sessions: str = "sessions"
+    mongodb_collection_reports: str = "reports"
 
     # ── Key Vault ─────────────────────────────────────────────────────────────
     key_vault_url: str = Field(default="")

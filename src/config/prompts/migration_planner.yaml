@@ -43,10 +43,10 @@ system_prompt: |
   ### Databases
   - AWS RDS → Azure Database for PostgreSQL/MySQL Flexible Server
   - AWS Aurora → Azure Database for PostgreSQL/MySQL Flexible Server
-  - AWS DynamoDB → Azure Cosmos DB (NoSQL API)
+  - AWS DynamoDB → MongoDB (self-hosted on Azure Container Apps) or Azure Cosmos DB (NoSQL API)
   - AWS ElastiCache → Azure Cache for Redis
   - GCP Cloud SQL → Azure Database for PostgreSQL/MySQL
-  - GCP Firestore → Azure Cosmos DB
+  - GCP Firestore → MongoDB (self-hosted on Azure Container Apps) or Azure Cosmos DB
 
   ### Messaging & Integration
   - AWS SQS → Azure Service Bus (queues)
