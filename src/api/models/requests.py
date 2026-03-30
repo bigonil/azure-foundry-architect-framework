@@ -21,6 +21,7 @@ class AnalysisType(str, Enum):
     MIGRATION = "migration_planner"
     GAP = "gap_analyzer"
     WAF = "waf_reviewer"
+    QUALITY = "quality_analyzer"
 
 
 class ArtifactItem(BaseModel):

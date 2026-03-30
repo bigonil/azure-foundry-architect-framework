@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { clsx } from 'clsx'
 import {
   Upload, Play, Cloud, Code2, Server, DollarSign,
-  GitBranch, BarChart3, Shield, ChevronRight, Loader2,
+  GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
   Sparkles, CheckCircle2,
 } from 'lucide-react'
 import { analysisApi, type AnalysisRequest, type ArtifactItem } from '../services/api'
@@ -25,6 +25,7 @@ const ANALYSIS_TYPES = [
   { value: 'migration_planner', label: 'Migration Plan', icon: GitBranch, desc: 'Wave planning, 6Rs strategy' },
   { value: 'gap_analyzer', label: 'GAP Analysis', icon: BarChart3, desc: 'Current vs target state gaps' },
   { value: 'waf_reviewer', label: 'WAF Review', icon: Shield, desc: '5 pillars Well-Architected review' },
+  { value: 'quality_analyzer', label: 'Quality Gate', icon: ShieldCheck, desc: 'SonarQube-level code & IaC analysis' },
 ]
 
 const AGENT_NAMES = [
@@ -34,6 +35,7 @@ const AGENT_NAMES = [
   { key: 'migration_planner', label: 'Migration Planner', icon: GitBranch },
   { key: 'gap_analyzer', label: 'GAP Analyzer', icon: BarChart3 },
   { key: 'waf_reviewer', label: 'WAF Reviewer', icon: Shield },
+  { key: 'quality_analyzer', label: 'Quality Analyzer', icon: ShieldCheck },
 ]
 
 // Demo pre-fill templates

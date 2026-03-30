@@ -16,6 +16,7 @@ from src.agents.cost_optimizer import CostOptimizerAgent
 from src.agents.gap_analyzer import GapAnalyzerAgent
 from src.agents.infra_analyzer import InfraAnalyzerAgent
 from src.agents.migration_planner import MigrationPlannerAgent
+from src.agents.quality_analyzer import QualityAnalyzerAgent
 from src.agents.waf_reviewer import WafReviewerAgent
 
 logger = logging.getLogger(__name__)
@@ -28,13 +29,14 @@ AGENT_REGISTRY = {
     "migration_planner": MigrationPlannerAgent,
     "gap_analyzer": GapAnalyzerAgent,
     "waf_reviewer": WafReviewerAgent,
+    "quality_analyzer": QualityAnalyzerAgent,
 }
 
 # Phase 1: Sequential (produce inputs for Phase 2)
 PHASE_1_AGENTS = ["code_analyzer", "infra_analyzer"]
 
 # Phase 2: Parallel (use Phase 1 outputs)
-PHASE_2_AGENTS = ["cost_optimizer", "migration_planner", "gap_analyzer", "waf_reviewer"]
+PHASE_2_AGENTS = ["cost_optimizer", "migration_planner", "gap_analyzer", "waf_reviewer", "quality_analyzer"]
 
 
 class AnalysisRequest:

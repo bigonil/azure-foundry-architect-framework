@@ -44,6 +44,7 @@ const makeAgentResults = (durations: number[]) => ({
   migration_planner: { agent_name: 'Migration Planner', status: 'success' as const, duration_seconds: durations[3] },
   gap_analyzer: { agent_name: 'GAP Analyzer', status: 'success' as const, duration_seconds: durations[4] },
   waf_reviewer: { agent_name: 'WAF Reviewer', status: 'success' as const, duration_seconds: durations[5] },
+  quality_analyzer: { agent_name: 'Quality Analyzer', status: 'success' as const, duration_seconds: durations[6] ?? durations[0] * 0.9 },
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -56,7 +57,7 @@ export const DEMO_REPORT_CONTOSO: AnalysisReport = {
   target_cloud: 'azure',
   status: 'completed',
   created_at: hoursAgo(2),
-  agent_results: makeAgentResults([28.4, 22.1, 31.7, 35.2, 26.8, 29.5]),
+  agent_results: makeAgentResults([28.4, 22.1, 31.7, 35.2, 26.8, 29.5, 24.3]),
   synthesis: {
     executive_summary:
       'The Contoso E-Commerce Platform is a well-structured, microservices-based application currently running on AWS with 14 services across ECS, RDS (PostgreSQL), ElastiCache (Redis), S3, CloudFront, and SQS. ' +
@@ -248,7 +249,7 @@ export const DEMO_REPORT_TECHCORP: AnalysisReport = {
   target_cloud: 'azure',
   status: 'completed',
   created_at: hoursAgo(18),
-  agent_results: makeAgentResults([34.1, 28.7, 25.3, 42.6, 31.9, 27.4]),
+  agent_results: makeAgentResults([34.1, 28.7, 25.3, 42.6, 31.9, 27.4, 33.2]),
   synthesis: {
     executive_summary:
       'The TechCorp Legacy CRM is a monolithic .NET Framework 4.8 application running on Windows Server 2019 with SQL Server 2017 on-premises. ' +
@@ -352,7 +353,7 @@ export const DEMO_REPORT_FINSERV: AnalysisReport = {
   target_cloud: 'azure',
   status: 'completed',
   created_at: hoursAgo(48),
-  agent_results: makeAgentResults([18.2, 15.6, 38.4, 12.1, 22.3, 33.8]),
+  agent_results: makeAgentResults([18.2, 15.6, 38.4, 12.1, 22.3, 33.8, 19.7]),
   synthesis: {
     executive_summary:
       'The FinServ Trading API is a high-performance, event-driven system on Azure processing 2.8M transactions/day. ' +

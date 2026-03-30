@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, BrainCircuit, Code2, Server, DollarSign,
-  GitBranch, BarChart3, Shield, Eye,
+  GitBranch, BarChart3, Shield, Eye, ShieldCheck,
 } from 'lucide-react'
 import { DEMO_SESSION_IDS } from '../services/mockData'
 
@@ -12,6 +12,7 @@ const agents = [
   { icon: GitBranch, name: 'Migration Planner', desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations' },
   { icon: BarChart3, name: 'GAP Analyzer', desc: 'Current vs target state across 7 dimensions with remediation roadmap' },
   { icon: Shield, name: 'WAF Reviewer', desc: 'Scores architecture against all 5 Well-Architected Framework pillars' },
+  { icon: ShieldCheck, name: 'Quality Analyzer', desc: 'SonarQube-level static analysis on code and IaC: bugs, vulnerabilities, smells, debt' },
 ]
 
 const demoReports = [
@@ -109,6 +110,7 @@ export default function HomePage() {
             { title: 'Cost Optimization', desc: 'Identify savings without migration — right-size existing Azure' },
             { title: 'WAF Assessment', desc: 'Score your architecture and get a prioritized remediation plan' },
             { title: 'App Modernization', desc: 'Monolith to microservices or serverless refactoring guide' },
+            { title: 'Code & IaC Quality Gate', desc: 'SonarQube-level static analysis on all code and infrastructure artifacts — bugs, vulnerabilities, smells, and security hotspots' },
           ].map(({ title, desc }) => (
             <div key={title} className="flex items-start gap-3 bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />

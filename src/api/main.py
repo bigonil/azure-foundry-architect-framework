@@ -87,6 +87,7 @@ async def health_check() -> HealthResponse:
             "migration_planner",
             "gap_analyzer",
             "waf_reviewer",
+            "quality_analyzer",
         ],
         foundry_connected=foundry_connected,
     )
@@ -106,6 +107,7 @@ async def root() -> dict:
             "migration_planner",
             "gap_analyzer",
             "waf_reviewer",
+            "quality_analyzer",
         ],
     }
 

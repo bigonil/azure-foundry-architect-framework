@@ -25,6 +25,7 @@ const agentBadges = [
   { name: 'Migration', colors: 'bg-purple-500/15 text-purple-400 border-purple-500/30' },
   { name: 'GAP',       colors: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
   { name: 'WAF',       colors: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
+  { name: 'Quality',   colors: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {

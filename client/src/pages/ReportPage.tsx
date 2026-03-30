@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   CheckCircle2, XCircle, Clock, AlertTriangle, TrendingDown,
-  ChevronRight, Shield, Server, Code2, DollarSign, GitBranch,
+  ChevronRight, Shield, ShieldCheck, Server, Code2, DollarSign, GitBranch,
   BarChart3, Star, Loader2,
 } from 'lucide-react'
 import { analysisApi, type AnalysisReport } from '../services/api'
@@ -30,6 +30,7 @@ const AGENT_ICONS: Record<string, any> = {
   migration_planner: GitBranch,
   gap_analyzer: BarChart3,
   waf_reviewer: Shield,
+  quality_analyzer: ShieldCheck,
 }
 
 export default function ReportPage() {
