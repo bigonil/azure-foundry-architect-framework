@@ -1,5 +1,9 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, BrainCircuit, Code2, Server, DollarSign, GitBranch, BarChart3, Shield } from 'lucide-react'
+import {
+  ArrowRight, BrainCircuit, Code2, Server, DollarSign,
+  GitBranch, BarChart3, Shield, Eye,
+} from 'lucide-react'
+import { DEMO_SESSION_IDS } from '../services/mockData'
 
 const agents = [
   { icon: Code2, name: 'Code Analyzer', desc: 'Detects languages, frameworks, cloud SDK coupling, and technical debt' },
@@ -8,6 +12,12 @@ const agents = [
   { icon: GitBranch, name: 'Migration Planner', desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations' },
   { icon: BarChart3, name: 'GAP Analyzer', desc: 'Current vs target state across 7 dimensions with remediation roadmap' },
   { icon: Shield, name: 'WAF Reviewer', desc: 'Scores architecture against all 5 Well-Architected Framework pillars' },
+]
+
+const demoReports = [
+  { id: DEMO_SESSION_IDS.contoso, name: 'Contoso E-Commerce', scenario: 'AWS → Azure', score: '3.2', savings: '$4,200/mo' },
+  { id: DEMO_SESSION_IDS.techcorp, name: 'TechCorp Legacy CRM', scenario: 'On-Prem → Azure', score: '2.1', savings: '$8,100/mo' },
+  { id: DEMO_SESSION_IDS.finserv, name: 'FinServ Trading API', scenario: 'Azure Optimization', score: '4.1', savings: '$12,800/mo' },
 ]
 
 export default function HomePage() {
@@ -26,12 +36,50 @@ export default function HomePage() {
           Multi-agent AI system for cloud architecture analysis, migration planning,
           cost optimization, and Well-Architected Framework review.
         </p>
-        <Link
-          to="/analysis"
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium mt-8 transition-colors"
-        >
-          Start New Analysis <ArrowRight className="w-4 h-4" />
-        </Link>
+        <div className="flex items-center justify-center gap-4 mt-8">
+          <Link
+            to="/analysis"
+            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            Start New Analysis <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link
+            to="/architecture"
+            className="inline-flex items-center gap-2 border border-gray-700 hover:border-gray-600 text-gray-300 px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            View Architecture
+          </Link>
+        </div>
+      </div>
+
+      {/* Demo Reports Quick Access */}
+      <div>
+        <h2 className="text-lg font-semibold text-white mb-4">Sample Analysis Reports</h2>
+        <div className="grid grid-cols-3 gap-4">
+          {demoReports.map(({ id, name, scenario, score, savings }) => (
+            <Link
+              key={id}
+              to={`/report/${id}`}
+              className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-blue-600/50 transition-all group"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full">{scenario}</span>
+                <Eye className="w-4 h-4 text-gray-600 group-hover:text-blue-400 transition-colors" />
+              </div>
+              <div className="font-medium text-white text-sm mb-3">{name}</div>
+              <div className="flex items-center gap-4 text-xs">
+                <div>
+                  <span className="text-gray-500">Score </span>
+                  <span className="text-white font-semibold">{score}/5</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Savings </span>
+                  <span className="text-green-400 font-semibold">{savings}</span>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* Agents */}

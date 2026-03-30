@@ -6,6 +6,7 @@ import { clsx } from 'clsx'
 import {
   Upload, Play, Cloud, Code2, Server, DollarSign,
   GitBranch, BarChart3, Shield, ChevronRight, Loader2,
+  Sparkles, CheckCircle2,
 } from 'lucide-react'
 import { analysisApi, type AnalysisRequest, type ArtifactItem } from '../services/api'
 
@@ -26,9 +27,57 @@ const ANALYSIS_TYPES = [
   { value: 'waf_reviewer', label: 'WAF Review', icon: Shield, desc: '5 pillars Well-Architected review' },
 ]
 
+const AGENT_NAMES = [
+  { key: 'code_analyzer', label: 'Code Analyzer', icon: Code2 },
+  { key: 'infra_analyzer', label: 'Infra Analyzer', icon: Server },
+  { key: 'cost_optimizer', label: 'Cost Optimizer', icon: DollarSign },
+  { key: 'migration_planner', label: 'Migration Planner', icon: GitBranch },
+  { key: 'gap_analyzer', label: 'GAP Analyzer', icon: BarChart3 },
+  { key: 'waf_reviewer', label: 'WAF Reviewer', icon: Shield },
+]
+
+// Demo pre-fill templates
+const DEMO_TEMPLATES = [
+  {
+    label: 'AWS → Azure Migration',
+    data: {
+      project_name: 'Contoso E-Commerce Platform',
+      source_cloud: 'aws' as const,
+      current_monthly_cost_usd: 13100,
+      additional_context: 'Microservices platform on ECS with 14 services, RDS PostgreSQL, ElastiCache Redis, SQS messaging, S3 storage, CloudFront CDN. Target: Azure PaaS with cost optimization.',
+      code_files: ['app.py', 'order_service.py', 'product_service.py', 'user_service.py', 'payment_handler.ts'],
+      iac_files: ['main.tf', 'ecs.tf', 'rds.tf', 'networking.tf'],
+    },
+  },
+  {
+    label: 'On-Prem Modernization',
+    data: {
+      project_name: 'TechCorp Legacy CRM',
+      source_cloud: 'on-premises' as const,
+      current_monthly_cost_usd: 22500,
+      additional_context: '.NET Framework 4.8 monolith on Windows Server 2019, SQL Server 2017 with 340+ stored procedures, SSRS reporting, Kerberos auth. Goal: modernize to Azure with minimal disruption.',
+      code_files: ['Program.cs', 'SalesController.cs', 'CustomerRepository.cs', 'BillingService.cs'],
+      iac_files: ['infrastructure.yaml', 'sql-server-config.json'],
+    },
+  },
+  {
+    label: 'Azure Cost Optimization',
+    data: {
+      project_name: 'FinServ Trading API',
+      source_cloud: 'azure' as const,
+      current_monthly_cost_usd: 47300,
+      additional_context: 'High-performance event-driven trading system on AKS (12 nodes), Azure SQL Hyperscale, Event Hubs Premium, Redis Enterprise. Processing 2.8M txns/day. Need to reduce costs without impacting SLAs.',
+      code_files: ['trading_engine.go', 'order_book.go', 'matching_service.go', 'risk_calculator.go'],
+      iac_files: ['main.bicep', 'aks.bicep', 'networking.bicep', 'monitoring.bicep'],
+    },
+  },
+]
+
 export default function AnalysisPage() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done'>>({})
 
   const [form, setForm] = useState<AnalysisRequest>({
     project_name: '',
@@ -78,6 +127,56 @@ export default function AnalysisPage() {
     })
   }
 
+  const applyTemplate = (tpl: typeof DEMO_TEMPLATES[number]) => {
+    const codeArtifacts = tpl.data.code_files.map((f) => ({
+      filename: f,
+      content: `// Demo file: ${f}\n// This is a placeholder for the ${tpl.data.project_name} project`,
+    }))
+    const iacArtifacts = tpl.data.iac_files.map((f) => ({
+      filename: f,
+      content: `# Demo IaC: ${f}\n# Infrastructure definition for ${tpl.data.project_name}`,
+    }))
+
+    setForm((prev) => ({
+      ...prev,
+      project_name: tpl.data.project_name,
+      source_cloud: tpl.data.source_cloud,
+      current_monthly_cost_usd: tpl.data.current_monthly_cost_usd,
+      additional_context: tpl.data.additional_context,
+      code_artifacts: codeArtifacts,
+      iac_artifacts: iacArtifacts,
+    }))
+    toast.success(`Template "${tpl.label}" loaded`)
+  }
+
+  const runAgentAnimation = async (): Promise<void> => {
+    const agents = AGENT_NAMES.map((a) => a.key)
+    const progress: Record<string, 'pending' | 'running' | 'done'> = {}
+    agents.forEach((a) => (progress[a] = 'pending'))
+    setAgentProgress({ ...progress })
+    setAnalyzing(true)
+
+    // Phase 1: sequential (code_analyzer, infra_analyzer)
+    for (const agent of agents.slice(0, 2)) {
+      progress[agent] = 'running'
+      setAgentProgress({ ...progress })
+      await new Promise((r) => setTimeout(r, 800 + Math.random() * 600))
+      progress[agent] = 'done'
+      setAgentProgress({ ...progress })
+    }
+
+    // Phase 2: parallel (remaining 4)
+    const parallel = agents.slice(2)
+    parallel.forEach((a) => (progress[a] = 'running'))
+    setAgentProgress({ ...progress })
+    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800))
+    parallel.forEach((a) => (progress[a] = 'done'))
+    setAgentProgress({ ...progress })
+
+    // Brief pause for synthesis
+    await new Promise((r) => setTimeout(r, 600))
+  }
+
   const handleSubmit = async () => {
     if (!form.project_name.trim()) {
       toast.error('Project name is required')
@@ -90,23 +189,76 @@ export default function AnalysisPage() {
 
     setLoading(true)
     try {
-      const hasMany = form.code_artifacts.length + form.iac_artifacts.length > 5
-      if (hasMany) {
-        const { data } = await analysisApi.start(form)
-        toast.success('Analysis started! Redirecting to report...')
-        navigate(`/report/${data.session_id}`)
-      } else {
-        const { data } = await analysisApi.quickScan(form)
-        navigate(`/report/${data.session_id}`, { state: { report: data } })
-      }
+      // Show agent progress animation
+      await runAgentAnimation()
+
+      const { data } = await analysisApi.quickScan(form)
+      toast.success('Analysis complete!')
+      navigate(`/report/${data.session_id}`, { state: { report: data } })
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Analysis failed')
     } finally {
       setLoading(false)
+      setAnalyzing(false)
+      setAgentProgress({})
     }
   }
 
   const allSelected = form.analysis_types.includes('all')
+
+  // Agent animation overlay
+  if (analyzing) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-8">
+        <div className="relative">
+          <div className="w-20 h-20 border-4 border-gray-700 rounded-full" />
+          <div className="w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full absolute top-0 animate-spin" />
+        </div>
+
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-white mb-1">Multi-Agent Analysis Running</h2>
+          <p className="text-gray-400 text-sm">6 specialist agents analyzing your project...</p>
+        </div>
+
+        <div className="w-full max-w-md space-y-3">
+          {AGENT_NAMES.map(({ key, label, icon: Icon }) => {
+            const status = agentProgress[key] ?? 'pending'
+            return (
+              <div
+                key={key}
+                className={clsx(
+                  'flex items-center gap-3 px-4 py-3 rounded-lg border transition-all duration-500',
+                  status === 'done'
+                    ? 'border-green-800 bg-green-900/20'
+                    : status === 'running'
+                    ? 'border-blue-600 bg-blue-900/20 animate-pulse'
+                    : 'border-gray-800 bg-gray-900'
+                )}
+              >
+                <Icon className={clsx(
+                  'w-4 h-4',
+                  status === 'done' ? 'text-green-400' : status === 'running' ? 'text-blue-400' : 'text-gray-600'
+                )} />
+                <span className={clsx(
+                  'text-sm font-medium flex-1',
+                  status === 'done' ? 'text-green-300' : status === 'running' ? 'text-blue-300' : 'text-gray-500'
+                )}>
+                  {label}
+                </span>
+                {status === 'done' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
+                {status === 'running' && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+          Synthesizing results with GPT-4o...
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
@@ -116,6 +268,26 @@ export default function AnalysisPage() {
           Upload your code and IaC artifacts to start a multi-agent architecture analysis.
         </p>
       </div>
+
+      {/* Demo Templates */}
+      <section className="bg-gradient-to-r from-blue-950/50 to-purple-950/30 rounded-xl border border-blue-800/40 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-4 h-4 text-blue-400" />
+          <span className="text-sm font-medium text-blue-300">Quick Start — Demo Templates</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {DEMO_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.label}
+              onClick={() => applyTemplate(tpl)}
+              className="text-left p-3 rounded-lg border border-blue-800/30 bg-blue-900/20 hover:bg-blue-900/40 transition-colors"
+            >
+              <div className="text-sm font-medium text-white">{tpl.label}</div>
+              <div className="text-xs text-gray-400 mt-1">{tpl.data.project_name}</div>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* Project Info */}
       <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-5">
@@ -150,6 +322,7 @@ export default function AnalysisPage() {
               type="number"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g. 5000"
+              value={form.current_monthly_cost_usd ?? ''}
               onChange={(e) =>
                 setForm((p) => ({ ...p, current_monthly_cost_usd: parseFloat(e.target.value) || undefined }))
               }
@@ -223,7 +396,14 @@ export default function AnalysisPage() {
             <div className="text-sm font-medium text-gray-300">Code Files</div>
             <div className="text-xs text-gray-500 mt-1">.py .js .ts .java .cs .go ...</div>
             {form.code_artifacts.length > 0 && (
-              <div className="mt-3 text-xs text-blue-400">{form.code_artifacts.length} file(s) loaded</div>
+              <div className="mt-3 space-y-1">
+                <div className="text-xs text-blue-400 font-medium">{form.code_artifacts.length} file(s) loaded</div>
+                <div className="flex flex-wrap gap-1 justify-center">
+                  {form.code_artifacts.map((a) => (
+                    <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
@@ -240,7 +420,14 @@ export default function AnalysisPage() {
             <div className="text-sm font-medium text-gray-300">IaC Files</div>
             <div className="text-xs text-gray-500 mt-1">.tf .bicep .yaml .json (ARM/K8s)</div>
             {form.iac_artifacts.length > 0 && (
-              <div className="mt-3 text-xs text-blue-400">{form.iac_artifacts.length} file(s) loaded</div>
+              <div className="mt-3 space-y-1">
+                <div className="text-xs text-blue-400 font-medium">{form.iac_artifacts.length} file(s) loaded</div>
+                <div className="flex flex-wrap gap-1 justify-center">
+                  {form.iac_artifacts.map((a) => (
+                    <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>

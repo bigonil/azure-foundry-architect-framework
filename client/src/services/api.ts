@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { mockAnalysisApi } from './mockApi'
 
 const api = axios.create({
   baseURL: '/api',
@@ -71,19 +72,51 @@ export interface SessionStatus {
   error?: string
 }
 
+// ── Demo mode detection ──────────────────────────────────────────────────────
+// Active when VITE_DEMO_MODE=true OR when no backend is reachable
+let _demoMode: boolean | null = null
+
+async function isDemoMode(): Promise<boolean> {
+  // Explicit env var takes priority
+  if (import.meta.env.VITE_DEMO_MODE === 'true') return true
+  if (import.meta.env.VITE_DEMO_MODE === 'false') return false
+
+  // Auto-detect: try to reach the backend health endpoint
+  if (_demoMode === null) {
+    try {
+      await axios.get('/health', { timeout: 2000 })
+      _demoMode = false
+    } catch {
+      _demoMode = true
+    }
+  }
+  return _demoMode
+}
+
+// ── Public API (auto-routes to mock or real) ─────────────────────────────────
 export const analysisApi = {
-  start: (request: AnalysisRequest) =>
-    api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request),
+  start: async (request: AnalysisRequest) => {
+    if (await isDemoMode()) return mockAnalysisApi.start(request)
+    return api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request)
+  },
 
-  quickScan: (request: AnalysisRequest) =>
-    api.post<AnalysisReport>('/analysis/quick-scan', request),
+  quickScan: async (request: AnalysisRequest) => {
+    if (await isDemoMode()) return mockAnalysisApi.quickScan(request)
+    return api.post<AnalysisReport>('/analysis/quick-scan', request)
+  },
 
-  getReport: (sessionId: string) =>
-    api.get<AnalysisReport>(`/analysis/${sessionId}`),
+  getReport: async (sessionId: string) => {
+    if (await isDemoMode()) return mockAnalysisApi.getReport(sessionId)
+    return api.get<AnalysisReport>(`/analysis/${sessionId}`)
+  },
 
-  getStatus: (sessionId: string) =>
-    api.get<SessionStatus>(`/analysis/${sessionId}/status`),
+  getStatus: async (sessionId: string) => {
+    if (await isDemoMode()) return mockAnalysisApi.getStatus(sessionId)
+    return api.get<SessionStatus>(`/analysis/${sessionId}/status`)
+  },
 
-  listSessions: () =>
-    api.get<SessionStatus[]>('/analysis/'),
+  listSessions: async () => {
+    if (await isDemoMode()) return mockAnalysisApi.listSessions()
+    return api.get<SessionStatus[]>('/analysis/')
+  },
 }

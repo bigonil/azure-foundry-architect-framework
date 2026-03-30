@@ -6,12 +6,13 @@ import {
   Search,
   History,
   BrainCircuit,
-  ChevronRight,
+  Map,
 } from 'lucide-react'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/analysis', label: 'New Analysis', icon: Search },
+  { path: '/architecture', label: 'Architecture', icon: Map },
   { path: '/history', label: 'History', icon: History },
 ]
 
@@ -32,6 +33,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               <div className="font-semibold text-sm text-white">Architect</div>
               <div className="text-xs text-gray-400">AI Framework</div>
             </div>
+          </div>
+          {/* Demo badge */}
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30">
+            <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
+            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Demo Mode</span>
           </div>
         </div>
 
@@ -69,6 +75,11 @@ export default function Layout({ children }: { children: ReactNode }) {
               </span>
             ))}
           </div>
+        </div>
+
+        {/* Version */}
+        <div className="px-4 pb-4 text-[10px] text-gray-600">
+          v1.0.0 · Azure AI Foundry
         </div>
       </aside>
 

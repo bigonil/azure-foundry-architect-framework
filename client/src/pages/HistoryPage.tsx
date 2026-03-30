@@ -18,7 +18,10 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Analysis History</h1>
+      <div>
+        <h1 className="text-2xl font-bold text-white">Analysis History</h1>
+        <p className="text-gray-400 mt-1 text-sm">All past and in-progress analysis sessions.</p>
+      </div>
 
       {!sessions || sessions.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
@@ -46,8 +49,8 @@ export default function HistoryPage() {
                 <div>
                   <div className="font-medium text-white">{session.project_name ?? 'Unnamed Project'}</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {session.session_id.slice(0, 8)}...
-                    {session.elapsed_seconds && ` · ${session.elapsed_seconds.toFixed(0)}s`}
+                    {session.session_id.slice(0, 24)}
+                    {session.elapsed_seconds != null && ` · ${Math.round(session.elapsed_seconds)}s`}
                   </div>
                 </div>
               </div>
