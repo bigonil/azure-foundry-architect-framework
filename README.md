@@ -1,4 +1,4 @@
-# Azure Foundry Architect Framework
+# Efesto — AI Fabryc
 
 Multi-agent AI system for cloud architecture analysis, migration planning, cost optimization,
 and Well-Architected Framework review. Built on **Azure AI Foundry**, following Microsoft **CAF**

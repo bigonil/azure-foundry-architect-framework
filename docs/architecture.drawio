@@ -1,10 +1,10 @@
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36" version="29.6.6">
-  <diagram id="afaf-architecture" name="Azure Foundry Architect Framework">
+  <diagram id="afaf-architecture" name="Efesto — AI Fabryc">
     <mxGraphModel dx="672" dy="332" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1200" math="0" shadow="1">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontStyle=1;fontColor=#0078D4;" value="Azure Foundry Architect Framework — Multi-Agent Architecture" vertex="1">
+        <mxCell id="2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontStyle=1;fontColor=#0078D4;" value="Efesto — AI Fabryc — Multi-Agent Architecture" vertex="1">
           <mxGeometry height="40" width="1860" x="20" y="15" as="geometry" />
         </mxCell>
         <mxCell id="10" parent="1" style="swimlane;fontStyle=1;fontSize=11;startSize=28;fillColor=#E3F2FD;strokeColor=#2496ED;strokeWidth=2;rounded=1;arcSize=3;" value="Local Development (Docker Compose)" vertex="1">

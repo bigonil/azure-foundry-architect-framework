@@ -78,7 +78,7 @@ def add_building_block_diagram(doc):
 
     diagram_text = """
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          AZURE FOUNDRY ARCHITECT FRAMEWORK                       │
+│                              EFESTO — AI FABRYC                                  │
 │                              Building Block View                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
@@ -189,7 +189,7 @@ def generate_documentation():
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.add_run('Azure Foundry\nArchitect Framework')
+    run = title.add_run('Efesto\nAI Fabryc')
     run.font.size = Pt(36)
     run.font.color.rgb = RGBColor(0x00, 0x78, 0xD4)
     run.bold = True
@@ -257,7 +257,7 @@ def generate_documentation():
     doc.add_heading('1. Executive Summary', level=1)
 
     doc.add_paragraph(
-        'Azure Foundry Architect Framework è un sistema multi-agente basato su intelligenza '
+        'Efesto AI Fabryc è un sistema multi-agente basato su intelligenza '
         'artificiale progettato per fornire analisi architetturali complete, pianificazione di '
         'migrazione cloud, ottimizzazione dei costi e revisione del Well-Architected Framework (WAF) '
         'di Azure. Il sistema utilizza 7 agenti specializzati coordinati da un orchestratore '
@@ -281,7 +281,7 @@ def generate_documentation():
     doc.add_paragraph(
         'Il progetto nasce dall\'esigenza di automatizzare e standardizzare il processo di '
         'analisi architetturale cloud, tipicamente svolto manualmente da team di Solution Architect '
-        'in settimane di lavoro. Azure Foundry Architect Framework riduce questo processo a minuti, '
+        'in settimane di lavoro. Efesto AI Fabryc riduce questo processo a minuti, '
         'fornendo un\'analisi multi-dimensionale coerente e ripetibile.'
     )
 
@@ -707,7 +707,7 @@ def generate_documentation():
     gen = doc.add_paragraph()
     gen.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = gen.add_run(
-        'Documento generato automaticamente da Azure Foundry Architect Framework v1.0.0\n'
+        'Documento generato automaticamente da Efesto AI Fabryc v1.0.0\n'
         'Powered by Azure AI Foundry · Follows CAF & WAF'
     )
     run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
