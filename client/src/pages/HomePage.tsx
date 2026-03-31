@@ -31,7 +31,7 @@ export default function HomePage() {
           Powered by Azure AI Foundry · Follows CAF & WAF
         </div>
         <h1 className="text-4xl font-bold text-white mb-4">
-          Azure Foundry<br />Architect Framework
+          Efeso<br />AI Fabryc
         </h1>
         <p className="text-gray-400 max-w-xl mx-auto text-lg leading-relaxed">
           Multi-agent AI system for cloud architecture analysis, migration planning,

@@ -1,12 +1,14 @@
 import { useState, useCallback } from 'react'
+
+type ArtifactSource = 'upload' | 'github' | 'devops'
 import { useNavigate } from 'react-router-dom'
 import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
 import { clsx } from 'clsx'
 import {
-  Upload, Play, Cloud, Code2, Server, DollarSign,
+  Play, Code2, Server, DollarSign,
   GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
-  Sparkles, CheckCircle2,
+  Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw,
 } from 'lucide-react'
 import { analysisApi, type AnalysisRequest, type ArtifactItem } from '../services/api'
 
@@ -80,6 +82,12 @@ export default function AnalysisPage() {
   const [loading, setLoading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done'>>({})
+  const [artifactSource, setArtifactSource] = useState<ArtifactSource>('upload')
+  const [repoConfig, setRepoConfig] = useState({
+    github: { repoUrl: '', branch: 'main', token: '', folder: '' },
+    devops: { orgUrl: '', project: '', repo: '', branch: 'main', token: '' },
+  })
+  const [repoLoading, setRepoLoading] = useState(false)
 
   const [form, setForm] = useState<AnalysisRequest>({
     project_name: '',
@@ -177,6 +185,29 @@ export default function AnalysisPage() {
 
     // Brief pause for synthesis
     await new Promise((r) => setTimeout(r, 600))
+  }
+
+  const handleConnectRepo = async (source: 'github' | 'devops') => {
+    setRepoLoading(true)
+    try {
+      // In demo mode simulate a successful repo import with placeholder files
+      await new Promise((r) => setTimeout(r, 1200))
+      const label = source === 'github' ? repoConfig.github.repoUrl : repoConfig.devops.repo || repoConfig.devops.project
+      const codeFiles = ['app.py', 'service.py', 'utils.py'].map((f) => ({
+        filename: f,
+        content: `# Imported from ${source}: ${label}\n# File: ${f}`,
+      }))
+      const iacFiles = ['main.tf', 'variables.tf'].map((f) => ({
+        filename: f,
+        content: `# Imported from ${source}: ${label}\n# IaC: ${f}`,
+      }))
+      setForm((prev) => ({ ...prev, code_artifacts: codeFiles, iac_artifacts: iacFiles }))
+      toast.success(`Repository imported successfully (${codeFiles.length + iacFiles.length} files)`)
+    } catch {
+      toast.error('Failed to connect to repository')
+    } finally {
+      setRepoLoading(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -309,6 +340,7 @@ export default function AnalysisPage() {
           <div>
             <label className="block text-sm text-gray-400 mb-1.5">Source Cloud *</label>
             <select
+              title="Source Cloud"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={form.source_cloud}
               onChange={(e) => setForm((p) => ({ ...p, source_cloud: e.target.value as any }))}
@@ -381,58 +413,214 @@ export default function AnalysisPage() {
         </div>
       </section>
 
-      {/* File Upload */}
+      {/* Artifacts Source */}
       <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
-        <h2 className="font-semibold text-white">3. Upload Artifacts</h2>
-        <div className="grid grid-cols-2 gap-4">
-          {/* Code Files */}
-          <div
-            {...getCodeProps()}
-            className={clsx(
-              'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
-              codeDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
-            )}
-          >
-            <input {...getCodeInput()} />
-            <Code2 className="w-8 h-8 text-gray-500 mx-auto mb-3" />
-            <div className="text-sm font-medium text-gray-300">Code Files</div>
-            <div className="text-xs text-gray-500 mt-1">.py .js .ts .java .cs .go ...</div>
-            {form.code_artifacts.length > 0 && (
-              <div className="mt-3 space-y-1">
-                <div className="text-xs text-blue-400 font-medium">{form.code_artifacts.length} file(s) loaded</div>
-                <div className="flex flex-wrap gap-1 justify-center">
-                  {form.code_artifacts.map((a) => (
-                    <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        <h2 className="font-semibold text-white">3. Artifact Source</h2>
 
-          {/* IaC Files */}
-          <div
-            {...getIaCProps()}
-            className={clsx(
-              'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
-              iacDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
-            )}
-          >
-            <input {...getIaCInput()} />
-            <Server className="w-8 h-8 text-gray-500 mx-auto mb-3" />
-            <div className="text-sm font-medium text-gray-300">IaC Files</div>
-            <div className="text-xs text-gray-500 mt-1">.tf .bicep .yaml .json (ARM/K8s)</div>
-            {form.iac_artifacts.length > 0 && (
-              <div className="mt-3 space-y-1">
-                <div className="text-xs text-blue-400 font-medium">{form.iac_artifacts.length} file(s) loaded</div>
-                <div className="flex flex-wrap gap-1 justify-center">
-                  {form.iac_artifacts.map((a) => (
-                    <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
-                  ))}
+        {/* Source tabs */}
+        <div className="flex gap-1 bg-gray-800 rounded-lg p-1 w-fit">
+          {([
+            { key: 'upload', label: 'File Upload', icon: FolderGit2 },
+            { key: 'github', label: 'GitHub', icon: Github },
+            { key: 'devops', label: 'Azure DevOps', icon: Link2 },
+          ] as const).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setArtifactSource(key)}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
+                artifactSource === key
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
+                  : 'text-gray-400 hover:text-white'
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── File Upload ── */}
+        {artifactSource === 'upload' && (
+          <div className="grid grid-cols-2 gap-4">
+            <div
+              {...getCodeProps()}
+              className={clsx(
+                'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
+                codeDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
+              )}
+            >
+              <input {...getCodeInput()} />
+              <Code2 className="w-8 h-8 text-gray-500 mx-auto mb-3" />
+              <div className="text-sm font-medium text-gray-300">Code Files</div>
+              <div className="text-xs text-gray-500 mt-1">.py .js .ts .java .cs .go ...</div>
+              {form.code_artifacts.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  <div className="text-xs text-blue-400 font-medium">{form.code_artifacts.length} file(s) loaded</div>
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {form.code_artifacts.map((a) => (
+                      <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
+                    ))}
+                  </div>
                 </div>
+              )}
+            </div>
+
+            <div
+              {...getIaCProps()}
+              className={clsx(
+                'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
+                iacDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
+              )}
+            >
+              <input {...getIaCInput()} />
+              <Server className="w-8 h-8 text-gray-500 mx-auto mb-3" />
+              <div className="text-sm font-medium text-gray-300">IaC Files</div>
+              <div className="text-xs text-gray-500 mt-1">.tf .bicep .yaml .json (ARM/K8s)</div>
+              {form.iac_artifacts.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  <div className="text-xs text-blue-400 font-medium">{form.iac_artifacts.length} file(s) loaded</div>
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {form.iac_artifacts.map((a) => (
+                      <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── GitHub ── */}
+        {artifactSource === 'github' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Repository URL</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://github.com/org/repo"
+                  value={repoConfig.github.repoUrl}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, repoUrl: e.target.value } }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Branch</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="main"
+                  value={repoConfig.github.branch}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, branch: e.target.value } }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Personal Access Token</label>
+                <input
+                  type="password"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  value={repoConfig.github.token}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, token: e.target.value } }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Folder path (optional)</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="src/ or infra/ (blank = root)"
+                  value={repoConfig.github.folder}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, folder: e.target.value } }))}
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => handleConnectRepo('github')}
+              disabled={repoLoading || !repoConfig.github.repoUrl}
+              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 disabled:opacity-40 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              {repoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
+              {repoLoading ? 'Connecting...' : 'Connect & Import Repository'}
+            </button>
+            {(form.code_artifacts.length > 0 || form.iac_artifacts.length > 0) && (
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-900/20 border border-green-800 rounded-lg px-4 py-2.5">
+                <CheckCircle2 className="w-4 h-4" />
+                {form.code_artifacts.length} code file(s) + {form.iac_artifacts.length} IaC file(s) imported from GitHub
               </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* ── Azure DevOps ── */}
+        {artifactSource === 'devops' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Organization URL</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://dev.azure.com/my-org"
+                  value={repoConfig.devops.orgUrl}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, orgUrl: e.target.value } }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Project</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="MyProject"
+                  value={repoConfig.devops.project}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, project: e.target.value } }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Repository Name</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="my-repo"
+                  value={repoConfig.devops.repo}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, repo: e.target.value } }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Branch</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="main"
+                  value={repoConfig.devops.branch}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, branch: e.target.value } }))}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">Personal Access Token (PAT)</label>
+              <input
+                type="password"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="PAT con scope Code (read)"
+                value={repoConfig.devops.token}
+                onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, token: e.target.value } }))}
+              />
+            </div>
+            <button
+              onClick={() => handleConnectRepo('devops')}
+              disabled={repoLoading || !repoConfig.devops.orgUrl || !repoConfig.devops.project}
+              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 disabled:opacity-40 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              {repoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+              {repoLoading ? 'Connecting...' : 'Connect & Import Repository'}
+            </button>
+            {(form.code_artifacts.length > 0 || form.iac_artifacts.length > 0) && (
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-900/20 border border-green-800 rounded-lg px-4 py-2.5">
+                <CheckCircle2 className="w-4 h-4" />
+                {form.code_artifacts.length} code file(s) + {form.iac_artifacts.length} IaC file(s) imported from Azure DevOps
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Submit */}

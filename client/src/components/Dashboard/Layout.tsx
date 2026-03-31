@@ -42,8 +42,8 @@ export default function Layout({ children }: { children: ReactNode }) {
               <BrainCircuit className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="font-semibold text-sm text-white">Architect</div>
-              <div className="text-xs text-gray-400">AI Framework</div>
+              <div className="font-semibold text-sm text-white">Efeso</div>
+              <div className="text-xs text-gray-400">AI Fabryc</div>
             </div>
           </div>
           {/* Demo badge */}
