@@ -18,14 +18,10 @@ const navItems = [
   { path: '/history', label: 'History', icon: History },
 ]
 
+// MVP: only Code and Infra agents are active
 const agentBadges = [
-  { name: 'Code',      colors: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
-  { name: 'Infra',     colors: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
-  { name: 'Cost',      colors: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
-  { name: 'Migration', colors: 'bg-purple-500/15 text-purple-400 border-purple-500/30' },
-  { name: 'GAP',       colors: 'bg-orange-500/15 text-orange-400 border-orange-500/30' },
-  { name: 'WAF',       colors: 'bg-rose-500/15 text-rose-400 border-rose-500/30' },
-  { name: 'Quality',   colors: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' },
+  { name: 'Code',  colors: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+  { name: 'Infra', colors: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -47,9 +43,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
           </div>
           {/* Demo badge */}
-          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30">
-            <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
-            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Demo Mode</span>
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30">
+            <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+            <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">MVP Mode</span>
           </div>
         </div>
 

@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
-  CheckCircle2, XCircle, Clock, AlertTriangle, TrendingDown,
+  CheckCircle2, XCircle, AlertTriangle,
   ChevronRight, Shield, ShieldCheck, Server, Code2, DollarSign, GitBranch,
-  BarChart3, Star, Loader2,
+  BarChart3,
 } from 'lucide-react'
 import { analysisApi, type AnalysisReport } from '../services/api'
 
@@ -36,49 +35,81 @@ const AGENT_ICONS: Record<string, any> = {
 export default function ReportPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const location = useLocation()
-  const [pollingEnabled, setPollingEnabled] = useState(true)
 
-  // If report was passed via navigation state (quick scan), use it directly
+  // If report was passed via navigation state (demo mode), use it directly
   const preloadedReport = location.state?.report as AnalysisReport | undefined
 
-  const { data: report, isLoading, error } = useQuery({
+  // ── Step 1: Poll /status every 3s while analysis is running ─────────────
+  const { data: statusData, error: statusError } = useQuery({
+    queryKey: ['status', sessionId],
+    queryFn: async () => {
+      const { data } = await analysisApi.getStatus(sessionId!)
+      return data
+    },
+    refetchInterval: (query) => {
+      const s = query.state.data?.status
+      return !s || s === 'running' ? 3000 : false
+    },
+    enabled: !!sessionId && !preloadedReport,
+  })
+
+  const isRunning = !preloadedReport && (!statusData || statusData.status === 'running')
+  const isFailed  = statusData?.status === 'failed'
+
+  // ── Step 2: Fetch report only once status = completed ───────────────────
+  const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
     queryKey: ['report', sessionId],
     queryFn: async () => {
       if (preloadedReport) return preloadedReport
       const { data } = await analysisApi.getReport(sessionId!)
       return data
     },
-    refetchInterval: pollingEnabled ? 3000 : false,
-    enabled: !!sessionId,
+    enabled: !!preloadedReport || (!!sessionId && statusData?.status === 'completed'),
   })
 
-  useEffect(() => {
-    if (report?.status === 'completed' || report?.status === 'failed') {
-      setPollingEnabled(false)
-    }
-  }, [report])
-
-  if (isLoading && !preloadedReport) {
+  // ── Loading: still running ───────────────────────────────────────────────
+  if (isRunning) {
+    const elapsed = statusData?.elapsed_seconds
     return (
       <div className="flex flex-col items-center justify-center min-h-96 gap-4">
         <div className="relative">
           <div className="w-16 h-16 border-4 border-gray-700 rounded-full" />
           <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full absolute top-0 animate-spin" />
         </div>
-        <div className="text-gray-400">Running multi-agent analysis...</div>
-        <div className="text-xs text-gray-600">This may take a few minutes</div>
+        <div className="text-center">
+          <div className="text-gray-300 font-medium">Multi-Agent Analysis Running</div>
+          <div className="text-gray-500 text-sm mt-1">
+            {elapsed != null ? `${Math.round(elapsed)}s elapsed — ` : ''}checking every 3 seconds...
+          </div>
+        </div>
+        <div className="text-xs text-gray-600">Claude claude-opus-4-6 is analyzing your project</div>
       </div>
     )
   }
 
-  if (error || !report) {
+  // ── Error: analysis failed or network error ──────────────────────────────
+  if (isFailed || statusError || reportError) {
+    const detail = statusData?.error ?? (reportError as any)?.message ?? 'Unknown error'
     return (
       <div className="flex items-center gap-3 bg-red-900/20 border border-red-800 rounded-xl p-6">
         <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
         <div>
-          <div className="text-red-300 font-medium">Failed to load report</div>
-          <div className="text-red-400/70 text-sm mt-1">Session ID: {sessionId}</div>
+          <div className="text-red-300 font-medium">Analysis failed</div>
+          <div className="text-red-400/70 text-sm mt-1">{detail}</div>
         </div>
+      </div>
+    )
+  }
+
+  // ── Loading: report fetch in flight ─────────────────────────────────────
+  if (reportLoading || !report) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-96 gap-4">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-gray-700 rounded-full" />
+          <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full absolute top-0 animate-spin" />
+        </div>
+        <div className="text-gray-400">Loading report...</div>
       </div>
     )
   }
@@ -181,10 +212,10 @@ export default function ReportPage() {
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
             <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Monthly Savings</div>
             <div className="text-3xl font-bold text-green-400">
-              ${synthesis.estimated_cost_savings_monthly_usd.toLocaleString()}
+              €{synthesis.estimated_cost_savings_monthly_usd.toLocaleString('it-IT')}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              ${(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString()}/year
+              €{(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString('it-IT')}/year
             </div>
           </div>
         )}

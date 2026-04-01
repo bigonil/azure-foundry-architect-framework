@@ -249,29 +249,62 @@ Return the orchestration plan as JSON.
                 "data": result.data if result.status == "success" else {"error": result.error},
             }
 
+        current_cost_eur = None
+        if request.current_monthly_cost_usd:
+            # Convert USD → EUR at ~0.93 rate
+            current_cost_eur = round(request.current_monthly_cost_usd * 0.93, 0)
+
+        cost_context = (
+            f"Current monthly cost: €{current_cost_eur:,.0f} EUR"
+            if current_cost_eur
+            else "Current monthly cost: not provided"
+        )
+
         return f"""
 Synthesize the following specialist agent analyses into a unified executive report.
 
 Project: {request.project_name}
 Source Cloud: {request.source_cloud}
 Target Cloud: {request.target_cloud}
+{cost_context}
 
 Agent Results:
 {json.dumps(results_summary, indent=2)}
 
+IMPORTANT CALCULATION GUIDELINES:
+
+1. estimated_migration_duration_weeks — derive from actual agent findings:
+   - Count total files/services/resources identified by code_analyzer and infra_analyzer
+   - Simple (< 5 services, low coupling): 4–8 weeks
+   - Medium (5–15 services, moderate coupling): 8–16 weeks
+   - Complex (> 15 services, high coupling, legacy debt): 16–32 weeks
+   - Add 2–4 weeks per critical risk identified
+   - Base on the actual complexity found, not a generic estimate
+
+2. estimated_cost_savings_monthly_usd — express in EUR (field name kept for compatibility):
+   - If current cost is known, estimate Azure target cost based on:
+     * Rehost: 15–25% savings (like-for-like Azure VMs)
+     * Replatform: 25–40% savings (managed services)
+     * Refactor: 35–55% savings (PaaS + right-sizing)
+   - Savings = current_cost_eur × savings_percentage
+   - If no current cost provided, derive from infra complexity (€500–€5000/month typical range)
+   - This value MUST be in EUR (€), NOT USD
+
+3. All monetary values in the response MUST be in EUR (€).
+
 Produce a JSON report with:
 {{
-  "executive_summary": "<3-5 sentence summary for C-level audience>",
-  "maturity_score": <1-5>,
-  "key_findings": ["<top finding 1>", "<top finding 2>", ...],
-  "critical_risks": ["<risk 1>", ...],
-  "recommended_strategy": "<rehost|replatform|refactor|hybrid — with rationale>",
-  "estimated_migration_duration_weeks": <number>,
-  "estimated_cost_savings_monthly_usd": <number>,
+  "executive_summary": "<3-5 sentence summary for C-level audience, monetary values in EUR>",
+  "maturity_score": <1.0-5.0, derived from code quality, coupling score, infra complexity>,
+  "key_findings": ["<specific finding from agent data>", ...],
+  "critical_risks": ["<specific risk identified by agents>", ...],
+  "recommended_strategy": "<rehost|replatform|refactor|hybrid — with rationale based on coupling score and complexity>",
+  "estimated_migration_duration_weeks": <integer, calculated as described above>,
+  "estimated_cost_savings_monthly_usd": <number in EUR, calculated as described above>,
   "top_10_actions": [
     {{
       "priority": 1,
-      "action": "<specific action>",
+      "action": "<specific, actionable step derived from agent findings>",
       "owner": "cloud_team|dev_team|security_team|management",
       "timeline": "immediate|30_days|90_days|6_months",
       "effort": "hours|days|weeks|months",
@@ -283,8 +316,8 @@ Produce a JSON report with:
       "phase": 1,
       "name": "<phase name>",
       "duration_weeks": <number>,
-      "objectives": ["<objective>"],
-      "key_milestones": ["<milestone>"]
+      "objectives": ["<specific objective from agent data>"],
+      "key_milestones": ["<measurable milestone>"]
     }}
   ]
 }}

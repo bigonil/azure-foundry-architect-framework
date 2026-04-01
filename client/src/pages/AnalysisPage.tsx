@@ -20,24 +20,27 @@ const CLOUD_OPTIONS = [
   { value: 'hybrid', label: 'Hybrid', icon: '🔗' },
 ]
 
+// MVP_AGENTS: active in this release. Others shown as grayed-out/coming-soon.
+const MVP_AGENTS = new Set(['code_analyzer', 'infra_analyzer'])
+
 const ANALYSIS_TYPES = [
-  { value: 'code_analyzer', label: 'Code Analysis', icon: Code2, desc: 'Languages, frameworks, cloud SDKs' },
-  { value: 'infra_analyzer', label: 'Infrastructure', icon: Server, desc: 'IaC resources, networking, security' },
-  { value: 'cost_optimizer', label: 'Cost Optimization', icon: DollarSign, desc: 'FinOps, right-sizing, savings' },
-  { value: 'migration_planner', label: 'Migration Plan', icon: GitBranch, desc: 'Wave planning, 6Rs strategy' },
-  { value: 'gap_analyzer', label: 'GAP Analysis', icon: BarChart3, desc: 'Current vs target state gaps' },
-  { value: 'waf_reviewer', label: 'WAF Review', icon: Shield, desc: '5 pillars Well-Architected review' },
-  { value: 'quality_analyzer', label: 'Quality Gate', icon: ShieldCheck, desc: 'SonarQube-level code & IaC analysis' },
+  { value: 'code_analyzer',    label: 'Code Analysis',     icon: Code2,      desc: 'Languages, frameworks, cloud SDKs',           mvp: true  },
+  { value: 'infra_analyzer',   label: 'Infrastructure',    icon: Server,     desc: 'IaC resources, networking, security',          mvp: true  },
+  { value: 'cost_optimizer',   label: 'Cost Optimization', icon: DollarSign, desc: 'FinOps, right-sizing, savings',                mvp: false },
+  { value: 'migration_planner',label: 'Migration Plan',    icon: GitBranch,  desc: 'Wave planning, 6Rs strategy',                  mvp: false },
+  { value: 'gap_analyzer',     label: 'GAP Analysis',      icon: BarChart3,  desc: 'Current vs target state gaps',                 mvp: false },
+  { value: 'waf_reviewer',     label: 'WAF Review',        icon: Shield,     desc: '5 pillars Well-Architected review',            mvp: false },
+  { value: 'quality_analyzer', label: 'Quality Gate',      icon: ShieldCheck,desc: 'SonarQube-level code & IaC analysis',          mvp: false },
 ]
 
 const AGENT_NAMES = [
-  { key: 'code_analyzer', label: 'Code Analyzer', icon: Code2 },
-  { key: 'infra_analyzer', label: 'Infra Analyzer', icon: Server },
-  { key: 'cost_optimizer', label: 'Cost Optimizer', icon: DollarSign },
+  { key: 'code_analyzer',     label: 'Code Analyzer',     icon: Code2 },
+  { key: 'infra_analyzer',    label: 'Infra Analyzer',    icon: Server },
+  { key: 'cost_optimizer',    label: 'Cost Optimizer',    icon: DollarSign },
   { key: 'migration_planner', label: 'Migration Planner', icon: GitBranch },
-  { key: 'gap_analyzer', label: 'GAP Analyzer', icon: BarChart3 },
-  { key: 'waf_reviewer', label: 'WAF Reviewer', icon: Shield },
-  { key: 'quality_analyzer', label: 'Quality Analyzer', icon: ShieldCheck },
+  { key: 'gap_analyzer',      label: 'GAP Analyzer',      icon: BarChart3 },
+  { key: 'waf_reviewer',      label: 'WAF Reviewer',      icon: Shield },
+  { key: 'quality_analyzer',  label: 'Quality Analyzer',  icon: ShieldCheck },
 ]
 
 // Demo pre-fill templates
@@ -81,7 +84,7 @@ export default function AnalysisPage() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
-  const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done'>>({})
+  const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done' | 'skipped'>>({})
   const [artifactSource, setArtifactSource] = useState<ArtifactSource>('upload')
   const [repoConfig, setRepoConfig] = useState({
     github: { repoUrl: '', branch: 'main', token: '', folder: '' },
@@ -93,7 +96,7 @@ export default function AnalysisPage() {
     project_name: '',
     source_cloud: 'aws',
     target_cloud: 'azure',
-    analysis_types: ['all'],
+    analysis_types: ['code_analyzer', 'infra_analyzer'],
     code_artifacts: [],
     iac_artifacts: [],
     additional_context: '',
@@ -160,28 +163,26 @@ export default function AnalysisPage() {
   }
 
   const runAgentAnimation = async (): Promise<void> => {
-    const agents = AGENT_NAMES.map((a) => a.key)
-    const progress: Record<string, 'pending' | 'running' | 'done'> = {}
-    agents.forEach((a) => (progress[a] = 'pending'))
+    const selectedTypes = form.analysis_types
+    const progress: Record<string, 'pending' | 'running' | 'done' | 'skipped'> = {}
+
+    // Mark each agent as pending (if selected) or skipped (if not)
+    AGENT_NAMES.forEach(({ key }) => {
+      const isSelected = selectedTypes.includes('all') || selectedTypes.includes(key)
+      progress[key] = isSelected ? 'pending' : 'skipped'
+    })
     setAgentProgress({ ...progress })
     setAnalyzing(true)
 
-    // Phase 1: sequential (code_analyzer, infra_analyzer)
-    for (const agent of agents.slice(0, 2)) {
+    // Run only selected agents sequentially
+    const activeAgents = AGENT_NAMES.map((a) => a.key).filter((k) => progress[k] === 'pending')
+    for (const agent of activeAgents) {
       progress[agent] = 'running'
       setAgentProgress({ ...progress })
       await new Promise((r) => setTimeout(r, 800 + Math.random() * 600))
       progress[agent] = 'done'
       setAgentProgress({ ...progress })
     }
-
-    // Phase 2: parallel (remaining 4)
-    const parallel = agents.slice(2)
-    parallel.forEach((a) => (progress[a] = 'running'))
-    setAgentProgress({ ...progress })
-    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800))
-    parallel.forEach((a) => (progress[a] = 'done'))
-    setAgentProgress({ ...progress })
 
     // Brief pause for synthesis
     await new Promise((r) => setTimeout(r, 600))
@@ -246,8 +247,6 @@ export default function AnalysisPage() {
     }
   }
 
-  const allSelected = form.analysis_types.includes('all')
-
   // Agent animation overlay
   if (analyzing) {
     return (
@@ -259,18 +258,28 @@ export default function AnalysisPage() {
 
         <div className="text-center">
           <h2 className="text-xl font-bold text-white mb-1">Multi-Agent Analysis Running</h2>
-          <p className="text-gray-400 text-sm">6 specialist agents analyzing your project...</p>
+          {(() => {
+            const active = AGENT_NAMES.filter(({ key }) => agentProgress[key] !== 'skipped')
+            return (
+              <p className="text-gray-400 text-sm">
+                {active.length} specialist agent{active.length !== 1 ? 's' : ''} analyzing your project...
+              </p>
+            )
+          })()}
         </div>
 
         <div className="w-full max-w-md space-y-3">
           {AGENT_NAMES.map(({ key, label, icon: Icon }) => {
             const status = agentProgress[key] ?? 'pending'
+            const isSkipped = status === 'skipped'
             return (
               <div
                 key={key}
                 className={clsx(
                   'flex items-center gap-3 px-4 py-3 rounded-lg border transition-all duration-500',
-                  status === 'done'
+                  isSkipped
+                    ? 'border-gray-800/50 bg-gray-900/40 opacity-40'
+                    : status === 'done'
                     ? 'border-green-800 bg-green-900/20'
                     : status === 'running'
                     ? 'border-blue-600 bg-blue-900/20 animate-pulse'
@@ -279,13 +288,14 @@ export default function AnalysisPage() {
               >
                 <Icon className={clsx(
                   'w-4 h-4',
-                  status === 'done' ? 'text-green-400' : status === 'running' ? 'text-blue-400' : 'text-gray-600'
+                  isSkipped ? 'text-gray-700' : status === 'done' ? 'text-green-400' : status === 'running' ? 'text-blue-400' : 'text-gray-600'
                 )} />
                 <span className={clsx(
                   'text-sm font-medium flex-1',
-                  status === 'done' ? 'text-green-300' : status === 'running' ? 'text-blue-300' : 'text-gray-500'
+                  isSkipped ? 'text-gray-700' : status === 'done' ? 'text-green-300' : status === 'running' ? 'text-blue-300' : 'text-gray-500'
                 )}>
                   {label}
+                  {isSkipped && <span className="ml-2 text-[10px] font-normal text-gray-700">not selected</span>}
                 </span>
                 {status === 'done' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
                 {status === 'running' && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
@@ -296,7 +306,7 @@ export default function AnalysisPage() {
 
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-          Synthesizing results with GPT-4o...
+          Synthesizing results with Claude claude-opus-4-6...
         </div>
       </div>
     )
@@ -360,7 +370,7 @@ export default function AnalysisPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">Monthly Cost (USD)</label>
+            <label className="block text-sm text-gray-400 mb-1.5">Monthly Cost (EUR approx.)</label>
             <input
               type="number"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -387,38 +397,58 @@ export default function AnalysisPage() {
 
       {/* Analysis Types */}
       <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
-        <h2 className="font-semibold text-white">2. Analysis Scope</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-white">2. Analysis Scope</h2>
+          <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+            MVP — Code &amp; Infra only
+          </span>
+        </div>
         <div className="grid grid-cols-3 gap-3">
-          {/* ALL button */}
-          <button
-            onClick={() => toggleAnalysisType('all')}
-            className={clsx(
-              'p-4 rounded-lg border text-left transition-all col-span-3',
-              allSelected
-                ? 'border-blue-500 bg-blue-500/10 text-blue-300'
-                : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
-            )}
+          {/* ALL button — disabled in MVP */}
+          <div
+            className="col-span-3 p-4 rounded-lg border border-gray-800 bg-gray-800/40 text-left opacity-40 cursor-not-allowed select-none"
+            title="Coming soon — Full Analysis will be available in a future release"
           >
-            <div className="font-medium text-sm">Full Analysis (All Agents)</div>
-            <div className="text-xs mt-1 opacity-70">Run all 6 specialist agents in sequence</div>
-          </button>
+            <div className="font-medium text-sm text-gray-500">Full Analysis (All Agents)</div>
+            <div className="text-xs mt-1 text-gray-600">Coming soon — select agents individually</div>
+          </div>
 
-          {ANALYSIS_TYPES.map(({ value, label, icon: Icon, desc }) => (
-            <button
-              key={value}
-              onClick={() => toggleAnalysisType(value)}
-              className={clsx(
-                'p-4 rounded-lg border text-left transition-all',
-                !allSelected && form.analysis_types.includes(value)
-                  ? 'border-blue-500 bg-blue-500/10 text-blue-300'
-                  : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
-              )}
-            >
-              <Icon className="w-5 h-5 mb-2" />
-              <div className="font-medium text-sm">{label}</div>
-              <div className="text-xs mt-1 opacity-70">{desc}</div>
-            </button>
-          ))}
+          {ANALYSIS_TYPES.map(({ value, label, icon: Icon, desc, mvp }) => {
+            const isSelected = form.analysis_types.includes(value)
+            if (!mvp) {
+              return (
+                <div
+                  key={value}
+                  className="relative p-4 rounded-lg border border-gray-800/50 bg-gray-800/20 text-left opacity-40 cursor-not-allowed select-none"
+                  title="Coming soon"
+                >
+                  <Icon className="w-5 h-5 mb-2 text-gray-700" />
+                  <div className="font-medium text-sm text-gray-600">{label}</div>
+                  <div className="text-xs mt-1 text-gray-700">{desc}</div>
+                  <span className="absolute top-2 right-2 text-[9px] font-semibold text-gray-600 uppercase tracking-wider">
+                    Soon
+                  </span>
+                </div>
+              )
+            }
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => toggleAnalysisType(value)}
+                className={clsx(
+                  'p-4 rounded-lg border text-left transition-all',
+                  isSelected
+                    ? 'border-blue-500 bg-blue-500/10 text-blue-300'
+                    : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
+                )}
+              >
+                <Icon className="w-5 h-5 mb-2" />
+                <div className="font-medium text-sm">{label}</div>
+                <div className="text-xs mt-1 opacity-70">{desc}</div>
+              </button>
+            )
+          })}
         </div>
       </section>
 
