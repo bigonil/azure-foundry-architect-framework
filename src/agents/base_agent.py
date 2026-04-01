@@ -124,19 +124,55 @@ class BaseAgent(ABC):
     # ── JSON extraction helper ─────────────────────────────────────────────────
     @staticmethod
     def _extract_json(raw: str) -> str:
-        """Strip markdown code fences from Claude/GPT responses that wrap JSON."""
+        """
+        Robustly extract a JSON object or array from Claude/GPT responses.
+        Handles: markdown code fences, leading text, trailing commentary.
+        """
         raw = raw.strip()
-        # Handle ```json ... ``` or ``` ... ```
-        match = re.search(r"```(?:json)?\s*([\s\S]+?)```", raw)
-        if match:
-            return match.group(1).strip()
-        # Handle responses that start with { or [
-        start = min(
-            (raw.find("{") if "{" in raw else len(raw)),
-            (raw.find("[") if "[" in raw else len(raw)),
-        )
-        if start < len(raw):
-            return raw[start:]
+
+        # 1. Try to strip ```json ... ``` or ``` ... ``` fences
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]+?)```", raw)
+        if fence_match:
+            candidate = fence_match.group(1).strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # 2. Find the first { or [ and extract the balanced JSON block
+        for opener, closer in [('{', '}'), ('[', ']')]:
+            start = raw.find(opener)
+            if start == -1:
+                continue
+            depth = 0
+            in_string = False
+            escape_next = False
+            for i, ch in enumerate(raw[start:], start):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == '\\' and in_string:
+                    escape_next = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == opener:
+                    depth += 1
+                elif ch == closer:
+                    depth -= 1
+                    if depth == 0:
+                        candidate = raw[start:i + 1]
+                        try:
+                            json.loads(candidate)
+                            return candidate
+                        except json.JSONDecodeError:
+                            break  # malformed, try next opener
+
+        # 3. Return raw as-is and let parse_response handle the error
         return raw
 
     # ── Main entrypoint ────────────────────────────────────────────────────────
