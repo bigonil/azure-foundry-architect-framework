@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any
 
-from azure.ai.projects.models import FunctionTool, ToolDefinition
 
 from src.agents.base_agent import BaseAgent
 from src.tools.pricing_calculator import PricingCalculator
@@ -21,7 +20,7 @@ class CostOptimizerAgent(BaseAgent):
     def agent_name(self) -> str:
         return "cost_optimizer"
 
-    def get_tools(self) -> list[ToolDefinition]:
+    def get_tools(self) -> list:
         # Expose Azure Pricing API as a tool
         return [
             FunctionTool(

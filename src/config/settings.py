@@ -1,6 +1,8 @@
 """
 Central configuration using Pydantic Settings.
-Supports: .env file, environment variables, Azure Key Vault (production).
+Supports .env file and environment variables.
+Local mode: LLM_PROVIDER=anthropic (default)
+Azure mode: LLM_PROVIDER=azure (requires Azure credentials)
 """
 from functools import lru_cache
 from typing import Literal
@@ -27,18 +29,27 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.app_allowed_origins.split(",")]
 
-    # ── Azure AI Foundry ───────────────────────────────────────────────────────
+    # ── LLM Provider ─────────────────────────────────────────────────────────
+    # "anthropic" = local mode using Anthropic API (Claude claude-opus-4-6)
+    # "azure"     = production mode using Azure OpenAI
+    llm_provider: Literal["anthropic", "azure"] = "anthropic"
+
+    # ── Anthropic (local mode) ────────────────────────────────────────────────
+    anthropic_api_key: str = Field(default="")
+    anthropic_model: str = "claude-opus-4-6"
+
+    # ── Azure AI Foundry (production mode — optional) ─────────────────────────
     azure_ai_project_connection_string: str = Field(default="")
     azure_ai_foundry_endpoint: str = Field(default="")
 
-    # ── Azure OpenAI ──────────────────────────────────────────────────────────
+    # ── Azure OpenAI (production mode — optional) ──────────────────────────────
     azure_openai_endpoint: str = Field(default="")
     azure_openai_api_key: str = Field(default="")
     azure_openai_deployment_gpt4o: str = "gpt-4o"
     azure_openai_deployment_gpt4o_mini: str = "gpt-4o-mini"
     azure_openai_api_version: str = "2025-01-01-preview"
 
-    # ── Azure AI Search ───────────────────────────────────────────────────────
+    # ── Azure AI Search (optional) ────────────────────────────────────────────
     azure_search_endpoint: str = Field(default="")
     azure_search_key: str = Field(default="")
     azure_search_index_caf: str = "caf-guidelines"
@@ -46,12 +57,12 @@ class Settings(BaseSettings):
     azure_search_index_patterns: str = "migration-patterns"
 
     # ── MongoDB ───────────────────────────────────────────────────────────────
-    mongodb_uri: str = Field(default="mongodb://admin:password@localhost:27017/architect-framework?authSource=admin")
-    mongodb_database: str = "architect-framework"
+    mongodb_uri: str = Field(default="mongodb://admin:changeme_local@localhost:27017/efesto-fabryc?authSource=admin")
+    mongodb_database: str = "efesto-fabryc"
     mongodb_collection_sessions: str = "sessions"
     mongodb_collection_reports: str = "reports"
 
-    # ── Key Vault ─────────────────────────────────────────────────────────────
+    # ── Key Vault (optional) ──────────────────────────────────────────────────
     key_vault_url: str = Field(default="")
 
     # ── Agent ─────────────────────────────────────────────────────────────────
@@ -78,8 +89,12 @@ class Settings(BaseSettings):
 
     @property
     def use_managed_identity(self) -> bool:
-        """Use Managed Identity when keys are empty (production pattern)."""
-        return not self.azure_openai_api_key
+        """Use Managed Identity when Azure keys are empty (production pattern)."""
+        return self.llm_provider == "azure" and not self.azure_openai_api_key
+
+    @property
+    def is_local_mode(self) -> bool:
+        return self.llm_provider == "anthropic"
 
 
 @lru_cache

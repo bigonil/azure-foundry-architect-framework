@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any
 
-from azure.ai.projects.models import ToolDefinition
 
 from src.agents.base_agent import BaseAgent
 
@@ -19,7 +18,7 @@ class GapAnalyzerAgent(BaseAgent):
     def agent_name(self) -> str:
         return "gap_analyzer"
 
-    def get_tools(self) -> list[ToolDefinition]:
+    def get_tools(self) -> list:
         return []
 
     def build_user_message(self, context: dict[str, Any]) -> str:

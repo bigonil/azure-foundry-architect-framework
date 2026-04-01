@@ -6,8 +6,6 @@ import json
 import logging
 from typing import Any
 
-from azure.ai.projects.models import CodeInterpreterTool, ToolDefinition
-
 from src.agents.base_agent import BaseAgent
 from src.tools.infra_parser import InfraParser
 
@@ -21,8 +19,11 @@ class InfraAnalyzerAgent(BaseAgent):
     def agent_name(self) -> str:
         return "infra_analyzer"
 
-    def get_tools(self) -> list[ToolDefinition]:
-        return [CodeInterpreterTool()]
+    def get_tools(self) -> list:
+        if self.settings.llm_provider == "azure":
+            from azure.ai.projects.models import CodeInterpreterTool  # noqa: PLC0415
+            return [CodeInterpreterTool()]
+        return []
 
     def build_user_message(self, context: dict[str, Any]) -> str:
         iac_artifacts = context.get("iac_artifacts", [])

@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any
 
-from azure.ai.projects.models import FileSearchTool, ToolDefinition
 
 from src.agents.base_agent import BaseAgent
 
@@ -20,7 +19,7 @@ class MigrationPlannerAgent(BaseAgent):
     def agent_name(self) -> str:
         return "migration_planner"
 
-    def get_tools(self) -> list[ToolDefinition]:
+    def get_tools(self) -> list:
         # File search allows the agent to query the migration patterns knowledge base
         return [FileSearchTool()]
 

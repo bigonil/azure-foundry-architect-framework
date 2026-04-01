@@ -1,0 +1,30 @@
+# compose.local.yml — MongoDB only for local development
+# Usage: docker compose -f compose.local.yml up -d
+#
+# Then start the backend and frontend manually:
+#   Backend : uvicorn src.api.main:app --reload --port 8000
+#   Frontend: cd client && npm run dev
+
+name: efesto-fabryc-local
+
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme_local}
+      MONGO_INITDB_DATABASE: efesto-fabryc
+    volumes:
+      - mongo_local_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mongo_local_data:

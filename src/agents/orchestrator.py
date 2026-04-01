@@ -8,8 +8,6 @@ import logging
 import uuid
 from typing import Any
 
-from azure.ai.projects.models import FileSearchTool, FunctionTool, ToolDefinition
-
 from src.agents.base_agent import AgentResult, BaseAgent
 from src.agents.code_analyzer import CodeAnalyzerAgent
 from src.agents.cost_optimizer import CostOptimizerAgent
@@ -90,7 +88,7 @@ class OrchestratorAgent(BaseAgent):
     def agent_name(self) -> str:
         return "orchestrator"
 
-    def get_tools(self) -> list[ToolDefinition]:
+    def get_tools(self) -> list:
         return []  # Orchestrator uses sub-agents, not direct tools
 
     def build_user_message(self, context: dict[str, Any]) -> str:
@@ -183,12 +181,48 @@ Return the orchestration plan as JSON.
         self, request: AnalysisRequest, results: dict[str, AgentResult]
     ) -> "AnalysisReport":
         """Synthesize all agent results into the final AnalysisReport."""
-        client = self._get_openai_client()
-
         synthesis_prompt = self._build_synthesis_prompt(request, results)
 
-        import asyncio as _asyncio
-        loop = _asyncio.get_event_loop()
+        if self.settings.llm_provider == "anthropic":
+            synthesis_data = await self._synthesize_anthropic(synthesis_prompt)
+        else:
+            synthesis_data = await self._synthesize_azure(synthesis_prompt)
+
+        return AnalysisReport(
+            session_id=request.session_id,
+            project_name=request.project_name,
+            source_cloud=request.source_cloud,
+            target_cloud=request.target_cloud,
+            agent_results=results,
+            synthesis=synthesis_data,
+        )
+
+    async def _synthesize_anthropic(self, synthesis_prompt: str) -> dict[str, Any]:
+        """Synthesize via Anthropic Claude claude-opus-4-6."""
+        import anthropic  # lazy import
+
+        client = anthropic.AsyncAnthropic(
+            api_key=self.settings.anthropic_api_key or None
+        )
+        system = (
+            self.system_prompt
+            + "\n\nCRITICAL: Respond ONLY with valid JSON. No markdown, no code fences. "
+            "Start directly with { and end with }."
+        )
+        response = await client.messages.create(
+            model=self.settings.anthropic_model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": synthesis_prompt}],
+        )
+        raw = response.content[0].text
+        clean = self._extract_json(raw)
+        return json.loads(clean)
+
+    async def _synthesize_azure(self, synthesis_prompt: str) -> dict[str, Any]:
+        """Synthesize via Azure OpenAI GPT-4o."""
+        client = self._get_openai_client()
+        loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
             lambda: client.chat.completions.create(
@@ -202,17 +236,7 @@ Return the orchestration plan as JSON.
                 response_format={"type": "json_object"},
             ),
         )
-
-        synthesis_data = json.loads(response.choices[0].message.content or "{}")
-
-        return AnalysisReport(
-            session_id=request.session_id,
-            project_name=request.project_name,
-            source_cloud=request.source_cloud,
-            target_cloud=request.target_cloud,
-            agent_results=results,
-            synthesis=synthesis_data,
-        )
+        return json.loads(response.choices[0].message.content or "{}")
 
     def _build_synthesis_prompt(
         self, request: AnalysisRequest, results: dict[str, AgentResult]

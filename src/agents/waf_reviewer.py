@@ -6,7 +6,6 @@ import json
 import logging
 from typing import Any
 
-from azure.ai.projects.models import FileSearchTool, ToolDefinition
 
 from src.agents.base_agent import BaseAgent
 
@@ -27,7 +26,7 @@ class WafReviewerAgent(BaseAgent):
     def agent_name(self) -> str:
         return "waf_reviewer"
 
-    def get_tools(self) -> list[ToolDefinition]:
+    def get_tools(self) -> list:
         # Can search the WAF knowledge base (indexed in Azure AI Search)
         return [FileSearchTool()]
 

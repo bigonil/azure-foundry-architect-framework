@@ -7,8 +7,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from azure.ai.projects.models import CodeInterpreterTool, ToolDefinition
-
 from src.agents.base_agent import BaseAgent
 from src.tools.code_scanner import CodeScanner
 
@@ -22,8 +20,12 @@ class CodeAnalyzerAgent(BaseAgent):
     def agent_name(self) -> str:
         return "code_analyzer"
 
-    def get_tools(self) -> list[ToolDefinition]:
-        return [CodeInterpreterTool()]
+    def get_tools(self) -> list:
+        # Foundry/Azure mode: return CodeInterpreterTool lazily to avoid import errors in local mode
+        if self.settings.llm_provider == "azure":
+            from azure.ai.projects.models import CodeInterpreterTool  # noqa: PLC0415
+            return [CodeInterpreterTool()]
+        return []
 
     def build_user_message(self, context: dict[str, Any]) -> str:
         artifacts = context.get("code_artifacts", [])
