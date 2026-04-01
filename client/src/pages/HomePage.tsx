@@ -6,13 +6,13 @@ import {
 import { DEMO_SESSION_IDS } from '../services/mockData'
 
 const agents = [
-  { icon: Code2, name: 'Code Analyzer', desc: 'Detects languages, frameworks, cloud SDK coupling, and technical debt' },
-  { icon: Server, name: 'Infra Analyzer', desc: 'Parses Terraform, Bicep, K8s, ARM — maps services to Azure equivalents' },
-  { icon: DollarSign, name: 'Cost Optimizer', desc: 'FinOps analysis: right-sizing, reserved instances, PaaS migration savings' },
-  { icon: GitBranch, name: 'Migration Planner', desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations' },
-  { icon: BarChart3, name: 'GAP Analyzer', desc: 'Current vs target state across 7 dimensions with remediation roadmap' },
-  { icon: Shield, name: 'WAF Reviewer', desc: 'Scores architecture against all 5 Well-Architected Framework pillars' },
-  { icon: ShieldCheck, name: 'Quality Analyzer', desc: 'SonarQube-level static analysis on code and IaC: bugs, vulnerabilities, smells, debt' },
+  { icon: Code2,       name: 'Code Analyzer',     desc: 'Detects languages, frameworks, cloud SDK coupling, and technical debt',                       mvp: true  },
+  { icon: Server,      name: 'Infra Analyzer',     desc: 'Parses Terraform, Bicep, K8s, ARM — maps services to Azure equivalents',                      mvp: true  },
+  { icon: DollarSign,  name: 'Cost Optimizer',     desc: 'FinOps analysis: right-sizing, reserved instances, PaaS migration savings',                   mvp: false },
+  { icon: GitBranch,   name: 'Migration Planner',  desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations',                     mvp: false },
+  { icon: BarChart3,   name: 'GAP Analyzer',       desc: 'Current vs target state across 7 dimensions with remediation roadmap',                        mvp: false },
+  { icon: Shield,      name: 'WAF Reviewer',       desc: 'Scores architecture against all 5 Well-Architected Framework pillars',                        mvp: false },
+  { icon: ShieldCheck, name: 'Quality Analyzer',   desc: 'SonarQube-level static analysis on code and IaC: bugs, vulnerabilities, smells, debt',        mvp: false },
 ]
 
 const demoReports = [
@@ -87,13 +87,30 @@ export default function HomePage() {
       <div>
         <h2 className="text-lg font-semibold text-white mb-4">Specialist Agents</h2>
         <div className="grid grid-cols-3 gap-4">
-          {agents.map(({ icon: Icon, name, desc }) => (
-            <div key={name} className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
-              <div className="w-10 h-10 bg-blue-600/15 rounded-lg flex items-center justify-center mb-3">
-                <Icon className="w-5 h-5 text-blue-400" />
+          {agents.map(({ icon: Icon, name, desc, mvp }) => (
+            <div
+              key={name}
+              className={mvp
+                ? 'relative bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors'
+                : 'relative bg-gray-900/40 border border-gray-800/40 rounded-xl p-5 opacity-40 cursor-not-allowed select-none'
+              }
+            >
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${mvp ? 'bg-blue-600/15' : 'bg-gray-700/30'}`}>
+                <Icon className={`w-5 h-5 ${mvp ? 'text-blue-400' : 'text-gray-600'}`} />
               </div>
-              <div className="font-medium text-white text-sm mb-1">{name}</div>
-              <div className="text-xs text-gray-500 leading-relaxed">{desc}</div>
+              <div className={`font-medium text-sm mb-1 ${mvp ? 'text-white' : 'text-gray-600'}`}>{name}</div>
+              <div className="text-xs text-gray-600 leading-relaxed">{desc}</div>
+              {!mvp && (
+                <span className="absolute top-3 right-3 text-[9px] font-semibold text-gray-600 uppercase tracking-wider">
+                  Coming soon
+                </span>
+              )}
+              {mvp && (
+                <span className="absolute top-3 right-3 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
+                  <span className="text-[9px] font-semibold text-green-500 uppercase tracking-wider">Active</span>
+                </span>
+              )}
             </div>
           ))}
         </div>
