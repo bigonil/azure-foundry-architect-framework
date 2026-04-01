@@ -10,7 +10,7 @@ import {
   GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
   Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw,
 } from 'lucide-react'
-import { analysisApi, type AnalysisRequest, type ArtifactItem } from '../services/api'
+import { analysisApi, isDemoMode, type AnalysisRequest, type ArtifactItem } from '../services/api'
 
 const CLOUD_OPTIONS = [
   { value: 'aws', label: 'Amazon Web Services', icon: '☁️' },
@@ -225,9 +225,18 @@ export default function AnalysisPage() {
       // Show agent progress animation
       await runAgentAnimation()
 
-      const { data } = await analysisApi.quickScan(form)
-      toast.success('Analysis complete!')
-      navigate(`/report/${data.session_id}`, { state: { report: data } })
+      const demo = await isDemoMode()
+      if (demo) {
+        // Demo mode: quickScan returns a full mock report immediately
+        const { data } = await analysisApi.quickScan(form)
+        toast.success('Analysis complete!')
+        navigate(`/report/${data.session_id}`, { state: { report: data } })
+      } else {
+        // Real backend: start async analysis and navigate to report page for polling
+        const { data } = await analysisApi.start(form)
+        toast.success('Analysis started — monitoring progress...')
+        navigate(`/report/${data.session_id}`)
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Analysis failed')
     } finally {

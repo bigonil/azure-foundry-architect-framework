@@ -126,7 +126,7 @@ async def quick_scan(request: AnalysisRequestBody) -> AnalysisReportResponse:
     try:
         report = await asyncio.wait_for(
             _execute_analysis(analysis_request, use_foundry_mode=request.use_foundry_mode),
-            timeout=120.0,
+            timeout=float(_settings.agent_timeout_seconds),
         )
         return report
     except asyncio.TimeoutError:

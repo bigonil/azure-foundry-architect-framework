@@ -93,16 +93,28 @@ async function isDemoMode(): Promise<boolean> {
   return _demoMode
 }
 
+// ── Demo mode check (exported for use in pages) ──────────────────────────────
+export { isDemoMode }
+
 // ── Public API (auto-routes to mock or real) ─────────────────────────────────
 export const analysisApi = {
+  /**
+   * Start an analysis.
+   * - Demo mode  → returns a fake full report immediately (mock)
+   * - Real mode  → starts async analysis, returns { session_id } for polling
+   */
   start: async (request: AnalysisRequest) => {
     if (await isDemoMode()) return mockAnalysisApi.start(request)
     return api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request)
   },
 
+  /**
+   * Quick scan (demo mode only — real mode uses start() + polling via ReportPage).
+   */
   quickScan: async (request: AnalysisRequest) => {
     if (await isDemoMode()) return mockAnalysisApi.quickScan(request)
-    return api.post<AnalysisReport>('/analysis/quick-scan', request)
+    // Real backend: delegate to async start; caller must navigate to /report/:id
+    return api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request)
   },
 
   getReport: async (sessionId: string) => {
