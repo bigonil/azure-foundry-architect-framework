@@ -1,4 +1,4 @@
-# compose.local.yml — MongoDB only for local development
+# compose.local.yml — MongoDB + Redis for local development
 # Usage: docker compose -f compose.local.yml up -d
 #
 # Then start the backend and frontend manually:
@@ -24,6 +24,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
 volumes:

@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     mongodb_collection_sessions: str = "sessions"
     mongodb_collection_reports: str = "reports"
 
+    # ── Redis (cache) ─────────────────────────────────────────────────────────
+    redis_uri: str = Field(default="redis://localhost:6379/0")
+    cache_report_ttl_hours: int = 24  # full-report cache TTL
+    cache_agent_ttl_hours: int = 48   # per-agent result cache TTL
+
     # ── Key Vault (optional) ──────────────────────────────────────────────────
     key_vault_url: str = Field(default="")
 

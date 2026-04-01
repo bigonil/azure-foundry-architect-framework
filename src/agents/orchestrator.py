@@ -16,6 +16,7 @@ from src.agents.infra_analyzer import InfraAnalyzerAgent
 from src.agents.migration_planner import MigrationPlannerAgent
 from src.agents.quality_analyzer import QualityAnalyzerAgent
 from src.agents.waf_reviewer import WafReviewerAgent
+from src.cache.redis_cache import agent_cache_key, cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
@@ -139,26 +140,54 @@ Return the orchestration plan as JSON.
         phase1_agents, phase2_agents = self._determine_agents_to_run(request)
         all_results: dict[str, AgentResult] = {}
 
-        # ── Phase 1: Sequential analysis ──────────────────────────────────────
-        logger.info(f"[Orchestrator] Phase 1: Running {phase1_agents}")
-        for agent_name in phase1_agents:
-            agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
-            result = await agent.run(context, session_id=request.session_id)
-            all_results[agent_name] = result
+        agent_ttl = self.settings.cache_agent_ttl_hours * 3600
 
-            # Enrich context with Phase 1 results for Phase 2 agents
+        # ── Phase 1: Sequential analysis ──────────────────────────────────────
+        logger.info("[Orchestrator] Phase 1: Running %s", phase1_agents)
+        for agent_name in phase1_agents:
+            akey = agent_cache_key(agent_name, context)
+            cached_data = await cache_get(akey)
+            if cached_data:
+                logger.info("[Orchestrator] Agent cache HIT: %s", agent_name)
+                result = AgentResult(
+                    agent_name=agent_name,
+                    session_id=request.session_id,
+                    status=cached_data.get("status", "success"),
+                    data=cached_data.get("data", {}),
+                    duration_seconds=0.0,
+                )
+            else:
+                agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
+                result = await agent.run(context, session_id=request.session_id)
+                if result.status == "success":
+                    await cache_set(akey, result.to_dict(), agent_ttl)
+
+            all_results[agent_name] = result
             if result.status == "success":
                 context[f"{agent_name}_results"] = result.data
 
         # ── Phase 2: Parallel analysis ─────────────────────────────────────────
         if phase2_agents:
-            logger.info(f"[Orchestrator] Phase 2: Running {phase2_agents} in parallel")
+            logger.info("[Orchestrator] Phase 2: Running %s in parallel", phase2_agents)
             semaphore = asyncio.Semaphore(self.settings.agent_parallel_limit)
 
             async def run_with_semaphore(agent_name: str) -> tuple[str, AgentResult]:
+                akey = agent_cache_key(agent_name, context)
+                cached_data = await cache_get(akey)
+                if cached_data:
+                    logger.info("[Orchestrator] Agent cache HIT: %s", agent_name)
+                    return agent_name, AgentResult(
+                        agent_name=agent_name,
+                        session_id=request.session_id,
+                        status=cached_data.get("status", "success"),
+                        data=cached_data.get("data", {}),
+                        duration_seconds=0.0,
+                    )
                 async with semaphore:
                     agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
                     result = await agent.run(context, session_id=request.session_id)
+                    if result.status == "success":
+                        await cache_set(akey, result.to_dict(), agent_ttl)
                     return agent_name, result
 
             phase2_tasks = [run_with_semaphore(name) for name in phase2_agents]
@@ -166,7 +195,7 @@ Return the orchestration plan as JSON.
 
             for outcome in phase2_outcomes:
                 if isinstance(outcome, Exception):
-                    logger.error(f"[Orchestrator] Phase 2 agent failed: {outcome}")
+                    logger.error("[Orchestrator] Phase 2 agent failed: %s", outcome)
                 else:
                     name, result = outcome
                     all_results[name] = result

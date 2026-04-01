@@ -16,6 +16,7 @@ from src.api.models.responses import (
     AnalysisReportResponse,
     AnalysisSessionResponse,
 )
+from src.cache.redis_cache import cache_get, cache_set, report_cache_key
 from src.config.settings import get_settings
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
@@ -37,15 +38,54 @@ async def start_analysis(
     """
     Submit a new architectural analysis request.
     Returns immediately with a session_id; analysis runs in the background.
+    Checks the Redis report cache first: if an identical request was processed
+    recently the cached report is returned immediately with status 'completed'.
     Poll GET /api/analysis/{session_id} for results.
     """
+    code_artifacts = [a.model_dump() for a in request.code_artifacts]
+    iac_artifacts = [a.model_dump() for a in request.iac_artifacts]
+    analysis_types = [t.value for t in request.analysis_types]
+
+    # ── Level-1 cache: full report ────────────────────────────────────────────
+    cache_key = report_cache_key({
+        "analysis_types": analysis_types,
+        "source_cloud": request.source_cloud.value,
+        "target_cloud": request.target_cloud.value,
+        "additional_context": request.additional_context,
+        "current_monthly_cost_usd": request.current_monthly_cost_usd,
+        "code_artifacts": code_artifacts,
+        "iac_artifacts": iac_artifacts,
+    })
+    cached = await cache_get(cache_key)
+    if cached:
+        logger.info(
+            "Cache HIT for project '%s' — returning cached report", request.project_name
+        )
+        cached_sid = cached["session_id"]
+        col_sess = _db()[_settings.mongodb_collection_sessions]
+        col_rep = _db()[_settings.mongodb_collection_reports]
+        if not await col_sess.find_one({"_id": cached_sid}):
+            await col_sess.insert_one({
+                "_id": cached_sid,
+                "status": "completed",
+                "project_name": request.project_name,
+                "started_at": time.time(),
+            })
+            await col_rep.insert_one({"_id": cached_sid, **cached})
+        return AnalysisSessionResponse(
+            session_id=cached_sid,
+            status="completed",
+            message="Returned from cache — no agent calls made.",
+            estimated_duration_minutes=0,
+        )
+
     analysis_request = AnalysisRequest(
         project_name=request.project_name,
         source_cloud=request.source_cloud.value,
         target_cloud=request.target_cloud.value,
-        analysis_types=[t.value for t in request.analysis_types],
-        code_artifacts=[a.model_dump() for a in request.code_artifacts],
-        iac_artifacts=[a.model_dump() for a in request.iac_artifacts],
+        analysis_types=analysis_types,
+        code_artifacts=code_artifacts,
+        iac_artifacts=iac_artifacts,
         current_monthly_cost_usd=request.current_monthly_cost_usd,
         additional_context=request.additional_context,
     )
@@ -56,12 +96,14 @@ async def start_analysis(
         "status": "running",
         "project_name": request.project_name,
         "started_at": time.time(),
+        "cache_key": cache_key,
     })
 
     background_tasks.add_task(
         _run_analysis,
         analysis_request,
         use_foundry_mode=request.use_foundry_mode,
+        cache_key=cache_key,
     )
 
     logger.info("Analysis session %s started for project '%s'", session_id, request.project_name)
@@ -169,14 +211,25 @@ async def list_sessions() -> list[dict]:
     ]
 
 
-async def _run_analysis(request: AnalysisRequest, use_foundry_mode: bool = False) -> None:
+async def _run_analysis(
+    request: AnalysisRequest,
+    use_foundry_mode: bool = False,
+    cache_key: str | None = None,
+) -> None:
     """Background task wrapper."""
     col_sessions = _db()[_settings.mongodb_collection_sessions]
     col_reports = _db()[_settings.mongodb_collection_reports]
     try:
         report = await _execute_analysis(request, use_foundry_mode)
-        await col_sessions.update_one({"_id": request.session_id}, {"$set": {"status": "completed"}})
-        await col_reports.insert_one({"_id": request.session_id, **report.model_dump()})
+        await col_sessions.update_one(
+            {"_id": request.session_id}, {"$set": {"status": "completed"}}
+        )
+        report_dict = report.model_dump()
+        await col_reports.insert_one({"_id": request.session_id, **report_dict})
+        # Store in Redis cache for future identical requests
+        if cache_key:
+            ttl = _settings.cache_report_ttl_hours * 3600
+            await cache_set(cache_key, report_dict, ttl)
     except Exception as exc:
         logger.error("Analysis session %s failed: %s", request.session_id, exc)
         await col_sessions.update_one(
