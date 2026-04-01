@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     mongodb_collection_sessions: str = "sessions"
     mongodb_collection_reports: str = "reports"
 
+    # ── SonarCloud ────────────────────────────────────────────────────────────
+    sonarcloud_token: str = Field(default="")
+    sonarcloud_org: str = Field(default="")  # organization key (slug), e.g. luca-bigoni
+
     # ── Redis (cache) ─────────────────────────────────────────────────────────
     redis_uri: str = Field(default="redis://localhost:6379/0")
     cache_report_ttl_hours: int = 24  # full-report cache TTL

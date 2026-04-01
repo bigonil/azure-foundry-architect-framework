@@ -245,6 +245,12 @@ async def _execute_analysis(
     orchestrator = OrchestratorAgent(use_foundry_mode=use_foundry_mode)
     report = await orchestrator.analyze(request)
 
+    # Extract SonarCloud data attached by CodeAnalyzerAgent
+    code_result = report.agent_results.get("code_analyzer")
+    sonarqube_analysis = None
+    if code_result and code_result.status == "success":
+        sonarqube_analysis = code_result.data.get("sonarqube_analysis")
+
     return AnalysisReportResponse(
         session_id=report.session_id,
         project_name=report.project_name,
@@ -262,4 +268,5 @@ async def _execute_analysis(
             for name, result in report.agent_results.items()
         },
         created_at=time.time(),
+        sonarqube_analysis=sonarqube_analysis,
     )

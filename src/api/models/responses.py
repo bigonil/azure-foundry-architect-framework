@@ -27,6 +27,7 @@ class AnalysisReportResponse(BaseModel):
     synthesis: dict[str, Any]
     agent_results: dict[str, AgentResultSummary]
     created_at: float
+    sonarqube_analysis: dict[str, Any] | None = None
 
 
 class HealthResponse(BaseModel):

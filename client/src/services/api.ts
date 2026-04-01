@@ -62,6 +62,38 @@ export interface AnalysisReport {
   }
   agent_results: Record<string, AgentResultSummary>
   created_at: number
+  sonarqube_analysis?: {
+    project_key?: string
+    project_name?: string
+    project_url?: string
+    error?: string
+    quality_gate?: {
+      status: string  // OK | ERROR | WARN | NONE
+      conditions?: Array<{ metric: string; status: string; actual?: string; threshold?: string }>
+    }
+    measures?: {
+      bugs?: number
+      vulnerabilities?: number
+      code_smells?: number
+      security_hotspots?: number
+      coverage?: number
+      duplication_pct?: number
+      technical_debt?: string
+      technical_debt_minutes?: number
+      ncloc?: number
+      reliability_rating?: string
+      security_rating?: string
+      sqale_rating?: string
+    }
+    issues?: Array<{
+      key: string
+      type: string
+      severity: string
+      message: string
+      component: string
+      line?: number
+    }>
+  }
 }
 
 export interface SessionStatus {

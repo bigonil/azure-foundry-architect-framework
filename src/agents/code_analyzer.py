@@ -1,6 +1,7 @@
 """
 Code Analyzer Agent — analyzes application source code repositories.
 Detects languages, frameworks, cloud coupling, patterns, and technical debt.
+Also fetches SonarCloud static analysis data for the project when available.
 """
 import json
 import logging
@@ -9,12 +10,17 @@ from typing import Any
 
 from src.agents.base_agent import BaseAgent
 from src.tools.code_scanner import CodeScanner
+from src.tools.sonarcloud_client import SonarCloudClient
 
 logger = logging.getLogger(__name__)
 
 
 class CodeAnalyzerAgent(BaseAgent):
-    """Analyzes application source code for cloud migration readiness."""
+    """Analyzes application source code for cloud migration readiness.
+
+    In addition to Claude-powered analysis, fetches SonarCloud static analysis
+    results (quality gate, metrics, top issues) and attaches them to the output.
+    """
 
     @property
     def agent_name(self) -> str:
@@ -27,13 +33,74 @@ class CodeAnalyzerAgent(BaseAgent):
             return [CodeInterpreterTool()]
         return []
 
+    # ── Override run() to add SonarCloud enrichment ────────────────────────────
+
+    async def run(self, context: dict[str, Any], session_id: str | None = None):
+        """Fetch SonarCloud data, run Claude analysis, merge results."""
+        project_name = context.get("project_name", "")
+        sonar_data = await self._fetch_sonarcloud(project_name)
+
+        # Inject SonarCloud data into context so build_user_message can reference it
+        enriched_context = {**context, "_sonarcloud": sonar_data}
+
+        # Run the normal Claude analysis pipeline
+        result = await super().run(enriched_context, session_id)
+
+        # Attach SonarCloud data regardless of Claude success/failure
+        result.data["sonarqube_analysis"] = sonar_data
+        return result
+
+    async def _fetch_sonarcloud(self, project_name: str) -> dict[str, Any]:
+        """Query SonarCloud for the project. Returns error dict if unavailable."""
+        if not self.settings.sonarcloud_token:
+            return {"error": "SONARCLOUD_TOKEN not set — skipping SonarCloud analysis"}
+        try:
+            client = SonarCloudClient()
+            data = await client.analyze_project(project_name)
+            if "error" in data:
+                logger.warning("[code_analyzer] SonarCloud: %s", data["error"])
+            else:
+                logger.info(
+                    "[code_analyzer] SonarCloud data fetched for project '%s'", project_name
+                )
+            return data
+        except Exception as exc:
+            logger.warning("[code_analyzer] SonarCloud fetch failed: %s", exc)
+            return {"error": str(exc)}
+
+    # ── build_user_message ────────────────────────────────────────────────────
+
     def build_user_message(self, context: dict[str, Any]) -> str:
         artifacts = context.get("code_artifacts", [])
         source_cloud = context.get("source_cloud", "unknown")
         target_cloud = context.get("target_cloud", "azure")
+        sonar = context.get("_sonarcloud", {})
 
-        # Pre-scan artifacts with local tools for efficiency
         scan_summary = self._pre_scan_artifacts(artifacts)
+
+        sonar_section = ""
+        if sonar and "error" not in sonar:
+            m = sonar.get("measures", {})
+            sonar_section = f"""
+## SonarCloud Static Analysis (real data from sonarcloud.io)
+- Quality Gate: {sonar.get('quality_gate', {}).get('status', 'UNKNOWN')}
+- Bugs: {m.get('bugs', 'N/A')}
+- Vulnerabilities: {m.get('vulnerabilities', 'N/A')}
+- Security Hotspots: {m.get('security_hotspots', 'N/A')}
+- Code Smells: {m.get('code_smells', 'N/A')}
+- Coverage: {m.get('coverage', 'N/A')}%
+- Duplication: {m.get('duplication_pct', 'N/A')}%
+- Technical Debt: {m.get('technical_debt', 'N/A')}
+- Lines of Code: {m.get('ncloc', 'N/A')}
+- Reliability Rating: {m.get('reliability_rating', 'N/A')}
+- Security Rating: {m.get('security_rating', 'N/A')}
+- Maintainability: {m.get('sqale_rating', 'N/A')}
+
+Top Issues (Bugs & Vulnerabilities):
+{json.dumps(sonar.get('issues', [])[:10], indent=2)}
+
+Use this data to enrich your technical_debt and architecture_patterns analysis.
+"""
 
         return f"""
 Analyze this application codebase for cloud migration readiness.
@@ -45,7 +112,7 @@ Analyze this application codebase for cloud migration readiness.
 
 ## Pre-Scan Results (from static analysis tools)
 {json.dumps(scan_summary, indent=2)}
-
+{sonar_section}
 ## Raw Artifacts
 {self._format_artifacts(artifacts)}
 
@@ -54,7 +121,7 @@ Perform a complete code analysis covering:
 1. Technology Inventory (languages, frameworks, versions)
 2. Cloud Provider Coupling (SDK usage, hard-coded cloud resources)
 3. Architecture Patterns (monolith/microservices/serverless)
-4. Technical Debt & Code Quality
+4. Technical Debt & Code Quality (incorporate SonarCloud data above if present)
 5. Containerization & Deployment Readiness (12-factor compliance)
 6. Migration Impact Assessment per component
 
