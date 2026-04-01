@@ -111,7 +111,10 @@ Return a comprehensive CodeAnalysisReport as JSON.
     def parse_response(self, raw_response: str) -> dict[str, Any]:
         try:
             data = json.loads(raw_response)
-            # Normalize to expected schema
+            # Claude occasionally returns a list of findings instead of an object —
+            # wrap it so downstream code always gets a dict.
+            if isinstance(data, list):
+                data = {"findings": data, "raw": data}
             return {
                 "technology_inventory": data.get("technology_inventory", {}),
                 "cloud_coupling": data.get("cloud_coupling", {}),
