@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 type ArtifactSource = 'upload' | 'github' | 'devops'
 import { useNavigate } from 'react-router-dom'
@@ -8,7 +8,7 @@ import { clsx } from 'clsx'
 import {
   Play, Code2, Server, DollarSign,
   GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
-  Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw,
+  Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw, FolderOpen,
 } from 'lucide-react'
 import { analysisApi, isDemoMode, type AnalysisRequest, type ArtifactItem } from '../services/api'
 
@@ -103,10 +103,13 @@ export default function AnalysisPage() {
     use_foundry_mode: false,
   })
 
-  const readFiles = async (files: File[]): Promise<ArtifactItem[]> =>
+  const codeFolderInputRef = useRef<HTMLInputElement>(null)
+  const iacFolderInputRef = useRef<HTMLInputElement>(null)
+
+  const readFiles = async (files: File[], useRelativePath = false): Promise<ArtifactItem[]> =>
     Promise.all(
       files.map(async (f) => ({
-        filename: f.name,
+        filename: useRelativePath && f.webkitRelativePath ? f.webkitRelativePath : f.name,
         content: await f.text(),
       }))
     )
@@ -121,6 +124,24 @@ export default function AnalysisPage() {
     const artifacts = await readFiles(files)
     setForm((prev) => ({ ...prev, iac_artifacts: [...prev.iac_artifacts, ...artifacts] }))
     toast.success(`${files.length} IaC file(s) added`)
+  }, [])
+
+  const onFolderCode = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    const artifacts = await readFiles(files, true)
+    setForm((prev) => ({ ...prev, code_artifacts: [...prev.code_artifacts, ...artifacts] }))
+    toast.success(`${files.length} code file(s) from folder added`)
+    e.target.value = ''
+  }, [])
+
+  const onFolderIaC = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    const artifacts = await readFiles(files, true)
+    setForm((prev) => ({ ...prev, iac_artifacts: [...prev.iac_artifacts, ...artifacts] }))
+    toast.success(`${files.length} IaC file(s) from folder added`)
+    e.target.value = ''
   }, [])
 
   const { getRootProps: getCodeProps, getInputProps: getCodeInput, isDragActive: codeDrag } = useDropzone({ onDrop: onDropCode, multiple: true })
@@ -482,50 +503,88 @@ export default function AnalysisPage() {
         {/* ── File Upload ── */}
         {artifactSource === 'upload' && (
           <div className="grid grid-cols-2 gap-4">
-            <div
-              {...getCodeProps()}
-              className={clsx(
-                'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
-                codeDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
-              )}
-            >
-              <input {...getCodeInput()} />
-              <Code2 className="w-8 h-8 text-gray-500 mx-auto mb-3" />
-              <div className="text-sm font-medium text-gray-300">Code Files</div>
-              <div className="text-xs text-gray-500 mt-1">.py .js .ts .java .cs .go ...</div>
-              {form.code_artifacts.length > 0 && (
-                <div className="mt-3 space-y-1">
-                  <div className="text-xs text-blue-400 font-medium">{form.code_artifacts.length} file(s) loaded</div>
-                  <div className="flex flex-wrap gap-1 justify-center">
-                    {form.code_artifacts.map((a) => (
-                      <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
-                    ))}
+            {/* Code drop zone */}
+            <div className="space-y-2">
+              <div
+                {...getCodeProps()}
+                className={clsx(
+                  'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
+                  codeDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
+                )}
+              >
+                <input {...getCodeInput()} />
+                <Code2 className="w-8 h-8 text-gray-500 mx-auto mb-3" />
+                <div className="text-sm font-medium text-gray-300">Code Files</div>
+                <div className="text-xs text-gray-500 mt-1">.py .js .ts .java .cs .go ...</div>
+                {form.code_artifacts.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    <div className="text-xs text-blue-400 font-medium">{form.code_artifacts.length} file(s) loaded</div>
+                    <div className="flex flex-wrap gap-1 justify-center">
+                      {form.code_artifacts.map((a) => (
+                        <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+              <input
+                ref={codeFolderInputRef}
+                type="file"
+                className="hidden"
+                onChange={onFolderCode}
+                multiple
+                {...{ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>}
+              />
+              <button
+                type="button"
+                onClick={() => codeFolderInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Add Code Folder
+              </button>
             </div>
 
-            <div
-              {...getIaCProps()}
-              className={clsx(
-                'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
-                iacDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
-              )}
-            >
-              <input {...getIaCInput()} />
-              <Server className="w-8 h-8 text-gray-500 mx-auto mb-3" />
-              <div className="text-sm font-medium text-gray-300">IaC Files</div>
-              <div className="text-xs text-gray-500 mt-1">.tf .bicep .yaml .json (ARM/K8s)</div>
-              {form.iac_artifacts.length > 0 && (
-                <div className="mt-3 space-y-1">
-                  <div className="text-xs text-blue-400 font-medium">{form.iac_artifacts.length} file(s) loaded</div>
-                  <div className="flex flex-wrap gap-1 justify-center">
-                    {form.iac_artifacts.map((a) => (
-                      <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
-                    ))}
+            {/* IaC drop zone */}
+            <div className="space-y-2">
+              <div
+                {...getIaCProps()}
+                className={clsx(
+                  'border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors',
+                  iacDrag ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-600'
+                )}
+              >
+                <input {...getIaCInput()} />
+                <Server className="w-8 h-8 text-gray-500 mx-auto mb-3" />
+                <div className="text-sm font-medium text-gray-300">IaC Files</div>
+                <div className="text-xs text-gray-500 mt-1">.tf .bicep .yaml .json (ARM/K8s)</div>
+                {form.iac_artifacts.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    <div className="text-xs text-blue-400 font-medium">{form.iac_artifacts.length} file(s) loaded</div>
+                    <div className="flex flex-wrap gap-1 justify-center">
+                      {form.iac_artifacts.map((a) => (
+                        <span key={a.filename} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{a.filename}</span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+              <input
+                ref={iacFolderInputRef}
+                type="file"
+                className="hidden"
+                onChange={onFolderIaC}
+                multiple
+                {...{ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>}
+              />
+              <button
+                type="button"
+                onClick={() => iacFolderInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-gray-700 text-sm text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Add IaC Folder
+              </button>
             </div>
           </div>
         )}
