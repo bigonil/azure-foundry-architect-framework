@@ -23,6 +23,8 @@ The current branch runs **fully locally** with real AI agents — no Azure subsc
 
 ## Architecture Overview
 
+![Architecture — Azure and Local deployment](docs/architecture.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        User / Frontend                          │
