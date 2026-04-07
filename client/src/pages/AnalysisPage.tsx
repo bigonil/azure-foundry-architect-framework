@@ -106,6 +106,30 @@ export default function AnalysisPage() {
   const codeFolderInputRef = useRef<HTMLInputElement>(null)
   const iacFolderInputRef = useRef<HTMLInputElement>(null)
 
+  // Directories to skip entirely when walking a folder upload
+  const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', 'dist', 'build', '.next', 'vendor', 'target'])
+
+  // Extensions treated as text/code (binary files are excluded)
+  const CODE_EXTS = new Set([
+    'py','js','ts','tsx','jsx','java','cs','go','rb','php','cpp','c','h','rs','kt','swift',
+    'scala','sh','bash','zsh','ps1','sql','r','lua','dart','ex','exs','clj','hs','ml','fs',
+    'html','css','scss','sass','less','vue','svelte','json','yaml','yml','toml','ini','env',
+    'md','txt','xml','csv','graphql','proto','conf','cfg',
+  ])
+  const IAC_EXTS = new Set([
+    'tf','tfvars','bicep','json','yaml','yml','toml','env','ini','conf',
+    'sh','bash','ps1','dockerfile','containerfile','hcl','xml','properties',
+  ])
+
+  const isTextFile = (filename: string, allowedExts: Set<string>) => {
+    const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+    return allowedExts.has(ext)
+  }
+
+  const shouldSkipPath = (relativePath: string) => {
+    return relativePath.split('/').some((segment) => SKIP_DIRS.has(segment))
+  }
+
   const readFiles = async (files: File[], useRelativePath = false): Promise<ArtifactItem[]> =>
     Promise.all(
       files.map(async (f) => ({
@@ -127,20 +151,36 @@ export default function AnalysisPage() {
   }, [])
 
   const onFolderCode = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    if (!files.length) return
-    const artifacts = await readFiles(files, true)
+    const all = Array.from(e.target.files ?? [])
+    const filtered = all.filter(
+      (f) => !shouldSkipPath(f.webkitRelativePath) && isTextFile(f.name, CODE_EXTS)
+    )
+    if (!filtered.length) {
+      toast.error('No supported code files found in the selected folder')
+      e.target.value = ''
+      return
+    }
+    const skipped = all.length - filtered.length
+    const artifacts = await readFiles(filtered, true)
     setForm((prev) => ({ ...prev, code_artifacts: [...prev.code_artifacts, ...artifacts] }))
-    toast.success(`${files.length} code file(s) from folder added`)
+    toast.success(`${filtered.length} code file(s) added${skipped > 0 ? ` (${skipped} binary/ignored skipped)` : ''}`)
     e.target.value = ''
   }, [])
 
   const onFolderIaC = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    if (!files.length) return
-    const artifacts = await readFiles(files, true)
+    const all = Array.from(e.target.files ?? [])
+    const filtered = all.filter(
+      (f) => !shouldSkipPath(f.webkitRelativePath) && isTextFile(f.name, IAC_EXTS)
+    )
+    if (!filtered.length) {
+      toast.error('No supported IaC files found in the selected folder')
+      e.target.value = ''
+      return
+    }
+    const skipped = all.length - filtered.length
+    const artifacts = await readFiles(filtered, true)
     setForm((prev) => ({ ...prev, iac_artifacts: [...prev.iac_artifacts, ...artifacts] }))
-    toast.success(`${files.length} IaC file(s) from folder added`)
+    toast.success(`${filtered.length} IaC file(s) added${skipped > 0 ? ` (${skipped} binary/ignored skipped)` : ''}`)
     e.target.value = ''
   }, [])
 

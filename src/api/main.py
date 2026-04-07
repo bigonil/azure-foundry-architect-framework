@@ -6,6 +6,7 @@ import time
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -113,6 +114,15 @@ async def root() -> dict:
 
 
 # ── Exception handlers ─────────────────────────────────────────────────────────
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    logger.error(f"422 Validation error on {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error(f"Unhandled exception on {request.url.path}: {exc}")

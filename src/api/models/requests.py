@@ -54,8 +54,8 @@ class AnalysisRequestBody(BaseModel):
     @field_validator("code_artifacts", "iac_artifacts")
     @classmethod
     def validate_artifact_count(cls, v: list[ArtifactItem]) -> list[ArtifactItem]:
-        if len(v) > 100:
-            raise ValueError("Maximum 100 artifacts per request")
+        if len(v) > 500:
+            raise ValueError("Maximum 500 artifacts per request")
         return v
 
     def to_agent_context(self) -> dict[str, Any]:
