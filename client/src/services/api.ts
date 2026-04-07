@@ -206,6 +206,29 @@ export const artifactsApi = {
   /** Delete an artifact by its storage key. */
   delete: (key: string) =>
     api.delete(`/artifacts/${encodeURIComponent(key)}`),
+
+  /**
+   * Upload files to the Docker volume (/app/uploads) for persistent reuse.
+   * Returns saved paths and the folder keys for the "Local Volume" tab.
+   */
+  uploadToVolume: async (
+    files: File[],
+    artifactType: 'code' | 'iac',
+    subfolder: string = '',
+  ) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    form.append('artifact_type', artifactType)
+    if (subfolder) form.append('subfolder', subfolder)
+    return api.post<{
+      saved: Array<{ filename: string; path: string; artifact_type: string; size_bytes: number }>
+      skipped: string[]
+      volume_code_folder: string
+      volume_iac_folder: string
+    }>('/artifacts/upload-to-volume', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 // ── Public API (auto-routes to mock or real) ─────────────────────────────────

@@ -87,6 +87,10 @@ export default function AnalysisPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done' | 'skipped'>>({})
   const [artifactSource, setArtifactSource] = useState<ArtifactSource>('upload')
+  const [persistToVolume, setPersistToVolume] = useState(false)
+  const [persistSubfolder, setPersistSubfolder] = useState('')
+  const [persistSaving, setPersistSaving] = useState(false)
+  const [persistedFolders, setPersistedFolders] = useState<{ code: string; iac: string }>({ code: '', iac: '' })
   const [blobArtifacts, setBlobArtifacts] = useState<BlobArtifactRef[]>([])
   const [blobUploading, setBlobUploading] = useState(false)
   const [volumeConfig, setVolumeConfig] = useState({ codeFolder: '', iacFolder: '' })
@@ -142,17 +146,36 @@ export default function AnalysisPage() {
       }))
     )
 
+  const persistToVolumeHandler = async (files: File[], type: 'code' | 'iac') => {
+    if (!persistToVolume) return
+    setPersistSaving(true)
+    try {
+      const sub = persistSubfolder.trim() || form.project_name.trim().replace(/\s+/g, '_').toLowerCase() || undefined
+      const { data } = await artifactsApi.uploadToVolume(files, type, sub)
+      const folder = type === 'code' ? data.volume_code_folder : data.volume_iac_folder
+      setPersistedFolders((prev) => ({ ...prev, [type]: folder }))
+      const skippedMsg = data.skipped.length > 0 ? ` (${data.skipped.length} skipped)` : ''
+      toast.success(`${data.saved.length} ${type} file(s) saved to volume${skippedMsg}`)
+    } catch (err: any) {
+      toast.error(`Volume save failed: ${err.response?.data?.detail || err.message}`)
+    } finally {
+      setPersistSaving(false)
+    }
+  }
+
   const onDropCode = useCallback(async (files: File[]) => {
     const artifacts = await readFiles(files)
     setForm((prev) => ({ ...prev, code_artifacts: [...prev.code_artifacts, ...artifacts] }))
     toast.success(`${files.length} code file(s) added`)
-  }, [])
+    await persistToVolumeHandler(files, 'code')
+  }, [persistToVolume, persistSubfolder, form.project_name])
 
   const onDropIaC = useCallback(async (files: File[]) => {
     const artifacts = await readFiles(files)
     setForm((prev) => ({ ...prev, iac_artifacts: [...prev.iac_artifacts, ...artifacts] }))
     toast.success(`${files.length} IaC file(s) added`)
-  }, [])
+    await persistToVolumeHandler(files, 'iac')
+  }, [persistToVolume, persistSubfolder, form.project_name])
 
   const onFolderCode = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const all = Array.from(e.target.files ?? [])
@@ -168,8 +191,9 @@ export default function AnalysisPage() {
     const artifacts = await readFiles(filtered, true)
     setForm((prev) => ({ ...prev, code_artifacts: [...prev.code_artifacts, ...artifacts] }))
     toast.success(`${filtered.length} code file(s) added${skipped > 0 ? ` (${skipped} binary/ignored skipped)` : ''}`)
+    await persistToVolumeHandler(filtered, 'code')
     e.target.value = ''
-  }, [])
+  }, [persistToVolume, persistSubfolder, form.project_name])
 
   const onFolderIaC = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const all = Array.from(e.target.files ?? [])
@@ -185,8 +209,9 @@ export default function AnalysisPage() {
     const artifacts = await readFiles(filtered, true)
     setForm((prev) => ({ ...prev, iac_artifacts: [...prev.iac_artifacts, ...artifacts] }))
     toast.success(`${filtered.length} IaC file(s) added${skipped > 0 ? ` (${skipped} binary/ignored skipped)` : ''}`)
+    await persistToVolumeHandler(filtered, 'iac')
     e.target.value = ''
-  }, [])
+  }, [persistToVolume, persistSubfolder, form.project_name])
 
   const { getRootProps: getCodeProps, getInputProps: getCodeInput, isDragActive: codeDrag } = useDropzone({ onDrop: onDropCode, multiple: true })
   const { getRootProps: getIaCProps, getInputProps: getIaCInput, isDragActive: iacDrag } = useDropzone({ onDrop: onDropIaC, multiple: true })
@@ -668,6 +693,53 @@ export default function AnalysisPage() {
                 Add IaC Folder
               </button>
             </div>
+          </div>
+
+          {/* ── Persist to Volume toggle ── */}
+          <div className={clsx(
+            'rounded-xl border p-4 space-y-3 transition-colors',
+            persistToVolume ? 'border-green-700/60 bg-green-900/10' : 'border-gray-700 bg-gray-800/40'
+          )}>
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                onClick={() => setPersistToVolume((v) => !v)}
+                className={clsx(
+                  'relative w-10 h-5 rounded-full transition-colors',
+                  persistToVolume ? 'bg-green-600' : 'bg-gray-600'
+                )}
+              >
+                <span className={clsx(
+                  'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  persistToVolume ? 'translate-x-5' : 'translate-x-0.5'
+                )} />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-gray-200">Persist files to Docker volume</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Saves a copy to <code className="bg-gray-700 px-1 rounded">/app/uploads</code> — reusable via the <strong>Local Volume</strong> tab without re-uploading
+                </div>
+              </div>
+              {persistSaving && <Loader2 className="w-4 h-4 animate-spin text-green-400 ml-auto" />}
+            </label>
+
+            {persistToVolume && (
+              <div className="space-y-2">
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-600"
+                  placeholder="Subfolder name (default: project name)"
+                  value={persistSubfolder}
+                  onChange={(e) => setPersistSubfolder(e.target.value)}
+                />
+                {(persistedFolders.code || persistedFolders.iac) && (
+                  <div className="flex flex-col gap-1 text-xs text-green-400 bg-green-900/20 border border-green-800/40 rounded-lg px-3 py-2">
+                    <span className="font-medium">Saved to volume:</span>
+                    {persistedFolders.code && <span>Code → <code className="text-green-300">{persistedFolders.code}</code></span>}
+                    {persistedFolders.iac  && <span>IaC  → <code className="text-green-300">{persistedFolders.iac}</code></span>}
+                    <span className="text-gray-500 mt-1">Use these paths in the Local Volume tab for future analyses.</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
