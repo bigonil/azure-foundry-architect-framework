@@ -13,6 +13,31 @@ export interface ArtifactItem {
 
 // ── Source config types (mirror backend discriminated union) ─────────────────
 
+// ── Presign ──────────────────────────────────────────────────────────────────
+
+export interface PresignRequest {
+  filename: string
+  artifact_type: 'code' | 'iac'
+}
+
+export interface PresignResponse {
+  key: string
+  upload_url: string
+  method: 'PUT'
+  expires_in: number
+}
+
+export interface BlobArtifactRef {
+  key: string
+  filename: string
+  artifact_type: 'code' | 'iac'
+}
+
+export interface BlobSourceConfig {
+  type: 'blob'
+  artifacts: BlobArtifactRef[]
+}
+
 export interface VolumeSourceConfig {
   type: 'volume'
   code_folder: string
@@ -39,7 +64,7 @@ export interface DevOpsSourceConfig {
   iac_folder: string
 }
 
-export type SourceConfig = VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
+export type SourceConfig = BlobSourceConfig | VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
 
 export interface AnalysisRequest {
   project_name: string
@@ -158,6 +183,30 @@ async function isDemoMode(): Promise<boolean> {
 
 // ── Demo mode check (exported for use in pages) ──────────────────────────────
 export { isDemoMode }
+
+// ── Artifacts API (presign + direct upload) ──────────────────────────────────
+export const artifactsApi = {
+  /** Request a presigned PUT URL for a single file. */
+  presign: (body: PresignRequest) =>
+    api.post<PresignResponse>('/artifacts/presign', body),
+
+  /**
+   * Upload a File directly to the presigned URL (MinIO / Azure Blob).
+   * This call goes directly to the storage endpoint — NOT through the backend.
+   */
+  uploadDirect: async (uploadUrl: string, file: File): Promise<void> => {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    })
+    if (!res.ok) throw new Error(`Direct upload failed: ${res.status} ${res.statusText}`)
+  },
+
+  /** Delete an artifact by its storage key. */
+  delete: (key: string) =>
+    api.delete(`/artifacts/${encodeURIComponent(key)}`),
+}
 
 // ── Public API (auto-routes to mock or real) ─────────────────────────────────
 export const analysisApi = {

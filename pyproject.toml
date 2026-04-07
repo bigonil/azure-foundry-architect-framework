@@ -34,6 +34,11 @@ dependencies = [
     "jsonschema>=4.23.0",
     # ── Reporting ─────────────────────────────────────────────────────────────
     "jinja2>=3.1.4",
+    # ── Object Storage ────────────────────────────────────────────────────────
+    # boto3: MinIO (S3-compatible) — local development
+    # azure-storage-blob: Azure Blob Storage — production
+    "boto3>=1.35.0",
+    "azure-storage-blob>=12.22.0",
 ]
 
 [project.optional-dependencies]

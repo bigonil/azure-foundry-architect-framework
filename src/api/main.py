@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from src.api.models.responses import HealthResponse
 from src.api.routes.analysis import router as analysis_router
+from src.api.routes.artifacts import router as artifacts_router
 from src.config.settings import get_settings
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ async def log_requests(request: Request, call_next):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(analysis_router)
+app.include_router(artifacts_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])

@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.agents.orchestrator import AnalysisRequest, OrchestratorAgent
-from src.api.models.requests import AnalysisRequestBody, DevOpsSourceConfig, GitHubSourceConfig, VolumeSourceConfig
+from src.api.models.requests import AnalysisRequestBody, BlobSourceConfig, DevOpsSourceConfig, GitHubSourceConfig, VolumeSourceConfig
 from src.api.models.responses import (
     AgentResultSummary,
     AnalysisReportResponse,
@@ -85,6 +85,27 @@ async def _resolve_artifacts(request: AnalysisRequestBody) -> tuple[list[dict], 
         except (RuntimeError, FileNotFoundError) as exc:
             raise HTTPException(status_code=422, detail=f"Azure DevOps clone failed: {exc}") from exc
         return code, iac
+
+    if isinstance(cfg, BlobSourceConfig):
+        from src.tools.blob_storage import get_client
+        client = get_client()
+        if not client.is_available():
+            raise HTTPException(status_code=503, detail="Object storage not configured (STORAGE_BACKEND=disabled).")
+        code_artifacts: list[dict] = []
+        iac_artifacts: list[dict] = []
+        for ref in cfg.artifacts:
+            try:
+                raw = client.download(ref.key)
+                content = raw.decode("utf-8", errors="replace")
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=f"Cannot read artifact '{ref.key}': {exc}") from exc
+            item = {"filename": ref.filename, "content": content}
+            if ref.artifact_type == "code":
+                code_artifacts.append(item)
+            else:
+                iac_artifacts.append(item)
+        logger.info("Blob source: loaded %d code + %d IaC artifacts", len(code_artifacts), len(iac_artifacts))
+        return code_artifacts, iac_artifacts
 
     raise HTTPException(status_code=400, detail=f"Unknown source_config type: {cfg.type}")
 

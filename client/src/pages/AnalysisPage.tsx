@@ -7,10 +7,11 @@ import {
   Play, Code2, Server, DollarSign,
   GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
   Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw, FolderOpen, HardDrive,
+  Database, Upload, X,
 } from 'lucide-react'
-import { analysisApi, isDemoMode, type AnalysisRequest, type ArtifactItem } from '../services/api'
+import { analysisApi, artifactsApi, isDemoMode, type AnalysisRequest, type ArtifactItem, type BlobArtifactRef } from '../services/api'
 
-type ArtifactSource = 'upload' | 'volume' | 'github' | 'devops'
+type ArtifactSource = 'upload' | 'blob' | 'volume' | 'github' | 'devops'
 
 const CLOUD_OPTIONS = [
   { value: 'aws', label: 'Amazon Web Services', icon: '☁️' },
@@ -86,6 +87,8 @@ export default function AnalysisPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done' | 'skipped'>>({})
   const [artifactSource, setArtifactSource] = useState<ArtifactSource>('upload')
+  const [blobArtifacts, setBlobArtifacts] = useState<BlobArtifactRef[]>([])
+  const [blobUploading, setBlobUploading] = useState(false)
   const [volumeConfig, setVolumeConfig] = useState({ codeFolder: '', iacFolder: '' })
   const [repoConfig, setRepoConfig] = useState({
     github: { repoUrl: '', branch: 'main', token: '', codeFolder: '', iacFolder: '' },
@@ -250,8 +253,35 @@ export default function AnalysisPage() {
     await new Promise((r) => setTimeout(r, 600))
   }
 
+  const handleBlobUpload = useCallback(async (files: File[], artifactType: 'code' | 'iac') => {
+    if (!files.length) return
+    setBlobUploading(true)
+    try {
+      const uploaded: BlobArtifactRef[] = []
+      for (const file of files) {
+        const { data } = await artifactsApi.presign({ filename: file.name, artifact_type: artifactType })
+        await artifactsApi.uploadDirect(data.upload_url, file)
+        uploaded.push({ key: data.key, filename: file.name, artifact_type: artifactType })
+      }
+      setBlobArtifacts((prev) => [...prev, ...uploaded])
+      toast.success(`${uploaded.length} ${artifactType} file(s) uploaded to storage`)
+    } catch (err: any) {
+      toast.error(err.message || 'Upload to object storage failed')
+    } finally {
+      setBlobUploading(false)
+    }
+  }, [])
+
+  const removeBlobArtifact = (key: string) => {
+    setBlobArtifacts((prev) => prev.filter((a) => a.key !== key))
+    artifactsApi.delete(key).catch(() => {})
+  }
+
   // Build source_config for volume/github/devops modes, or undefined for upload mode
   const buildSourceConfig = () => {
+    if (artifactSource === 'blob') {
+      return { type: 'blob' as const, artifacts: blobArtifacts }
+    }
     if (artifactSource === 'volume') {
       return { type: 'volume' as const, code_folder: volumeConfig.codeFolder, iac_folder: volumeConfig.iacFolder }
     }
@@ -275,6 +305,10 @@ export default function AnalysisPage() {
     const hasInline = form.code_artifacts.length > 0 || form.iac_artifacts.length > 0
     if (!sourceConfig && !hasInline) {
       toast.error('Please upload at least one code or IaC file, or configure a source')
+      return
+    }
+    if (artifactSource === 'blob' && blobArtifacts.length === 0) {
+      toast.error('Upload at least one file to object storage before starting analysis')
       return
     }
     // Basic validation for each source type
@@ -526,10 +560,11 @@ export default function AnalysisPage() {
         {/* Source tabs */}
         <div className="flex flex-wrap gap-1 bg-gray-800 rounded-lg p-1 w-fit">
           {([
-            { key: 'upload', label: 'File Upload', icon: FolderGit2 },
-            { key: 'volume', label: 'Local Volume', icon: HardDrive },
-            { key: 'github', label: 'GitHub', icon: Github },
-            { key: 'devops', label: 'Azure DevOps', icon: Link2 },
+            { key: 'upload',  label: 'File Upload',     icon: FolderGit2 },
+            { key: 'blob',    label: 'Object Storage',  icon: Database   },
+            { key: 'volume',  label: 'Local Volume',    icon: HardDrive  },
+            { key: 'github',  label: 'GitHub',          icon: Github     },
+            { key: 'devops',  label: 'Azure DevOps',    icon: Link2      },
           ] as const).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -633,6 +668,92 @@ export default function AnalysisPage() {
                 Add IaC Folder
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ── Object Storage (MinIO / Azure Blob) ── */}
+        {artifactSource === 'blob' && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 bg-blue-900/20 border border-blue-800/50 rounded-lg px-4 py-3 text-sm text-blue-300">
+              <Database className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                Files are uploaded directly from your browser to <strong>MinIO</strong> (local) or <strong>Azure Blob Storage</strong> (production) via a presigned URL — they never pass through the backend. Configure <code className="bg-gray-800 px-1 rounded">STORAGE_BACKEND=minio</code> and start MinIO before using this tab.
+              </span>
+            </div>
+
+            {/* Upload buttons */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Code files → MinIO */}
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-400">Code Files</label>
+                <label className={clsx(
+                  'flex items-center justify-center gap-2 w-full px-4 py-8 rounded-xl border-2 border-dashed cursor-pointer transition-colors',
+                  blobUploading ? 'opacity-50 cursor-not-allowed border-gray-700' : 'border-gray-700 hover:border-blue-500 hover:bg-blue-500/5'
+                )}>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    disabled={blobUploading}
+                    onChange={(e) => handleBlobUpload(Array.from(e.target.files ?? []), 'code')}
+                  />
+                  {blobUploading
+                    ? <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                    : <Upload className="w-5 h-5 text-gray-500" />}
+                  <span className="text-sm text-gray-400">{blobUploading ? 'Uploading...' : 'Select Code Files'}</span>
+                </label>
+              </div>
+
+              {/* IaC files → MinIO */}
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-400">IaC Files</label>
+                <label className={clsx(
+                  'flex items-center justify-center gap-2 w-full px-4 py-8 rounded-xl border-2 border-dashed cursor-pointer transition-colors',
+                  blobUploading ? 'opacity-50 cursor-not-allowed border-gray-700' : 'border-gray-700 hover:border-blue-500 hover:bg-blue-500/5'
+                )}>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    disabled={blobUploading}
+                    onChange={(e) => handleBlobUpload(Array.from(e.target.files ?? []), 'iac')}
+                  />
+                  {blobUploading
+                    ? <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                    : <Upload className="w-5 h-5 text-gray-500" />}
+                  <span className="text-sm text-gray-400">{blobUploading ? 'Uploading...' : 'Select IaC Files'}</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Uploaded artifact list */}
+            {blobArtifacts.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-gray-400 font-medium">{blobArtifacts.length} file(s) in storage</div>
+                <div className="flex flex-wrap gap-2">
+                  {blobArtifacts.map((a) => (
+                    <span
+                      key={a.key}
+                      className={clsx(
+                        'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md',
+                        a.artifact_type === 'code'
+                          ? 'bg-blue-900/30 text-blue-300 border border-blue-800/50'
+                          : 'bg-orange-900/30 text-orange-300 border border-orange-800/50'
+                      )}
+                    >
+                      <span className="opacity-60">{a.artifact_type === 'code' ? '〈/〉' : '⚙'}</span>
+                      {a.filename}
+                      <button
+                        onClick={() => removeBlobArtifact(a.key)}
+                        className="ml-1 opacity-50 hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

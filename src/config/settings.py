@@ -80,6 +80,30 @@ class Settings(BaseSettings):
     agent_parallel_limit: int = 4
     agent_timeout_seconds: int = 300
 
+    # ── Object Storage ────────────────────────────────────────────────────────
+    # "minio"    = local MinIO via boto3 (S3-compatible)
+    # "azure"    = Azure Blob Storage via azure-storage-blob SDK
+    # "disabled" = object storage not available (upload-only mode)
+    storage_backend: Literal["minio", "azure", "disabled"] = "disabled"
+
+    # MinIO (local) ──────────────────────────────────────────────────────────
+    # minio_endpoint       : URL used by the *backend* to reach MinIO
+    #                        (Docker internal: http://minio:9000)
+    # minio_public_endpoint: URL embedded in presigned URLs returned to the browser
+    #                        (always http://localhost:9000 for local dev)
+    minio_endpoint: str = "http://localhost:9005"
+    minio_public_endpoint: str = "http://localhost:9005"
+    minio_access_key: str = "efesto"
+    minio_secret_key: str = "changeme_local_minio"
+    minio_bucket: str = "efesto-artifacts"
+    minio_presign_expiry_seconds: int = 3600
+
+    # Azure Blob Storage (production) ────────────────────────────────────────
+    # connection_string empty → falls back to DefaultAzureCredential (Managed Identity)
+    azure_storage_account_name: str = Field(default="")
+    azure_storage_connection_string: str = Field(default="")
+    azure_storage_container: str = "efesto-artifacts"
+
     # ── Pricing ───────────────────────────────────────────────────────────────
     azure_pricing_api: str = "https://prices.azure.com/api/retail/prices"
     aws_pricing_enabled: bool = False

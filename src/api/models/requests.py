@@ -67,7 +67,24 @@ class DevOpsSourceConfig(BaseModel):
     iac_folder: str = Field(default="", description="Sub-folder to scan for IaC files")
 
 
-SourceConfig = VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
+class BlobArtifactRef(BaseModel):
+    """Reference to a file already uploaded to object storage (MinIO / Azure Blob)."""
+    key: str = Field(..., description="Storage key returned by POST /api/artifacts/presign")
+    filename: str = Field(..., description="Original filename (used as artifact filename)")
+    artifact_type: Literal["code", "iac"] = Field(..., description="'code' or 'iac'")
+
+
+class BlobSourceConfig(BaseModel):
+    """Read artifacts from object storage (MinIO locally, Azure Blob in production)."""
+    type: Literal["blob"] = "blob"
+    artifacts: list[BlobArtifactRef] = Field(
+        ...,
+        min_length=1,
+        description="List of artifact references previously uploaded via /api/artifacts/presign",
+    )
+
+
+SourceConfig = VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig | BlobSourceConfig
 
 
 # ── Main request body ─────────────────────────────────────────────────────────
