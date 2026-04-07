@@ -1,6 +1,4 @@
 import { useState, useCallback, useRef } from 'react'
-
-type ArtifactSource = 'upload' | 'github' | 'devops'
 import { useNavigate } from 'react-router-dom'
 import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
@@ -8,9 +6,11 @@ import { clsx } from 'clsx'
 import {
   Play, Code2, Server, DollarSign,
   GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
-  Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw, FolderOpen,
+  Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw, FolderOpen, HardDrive,
 } from 'lucide-react'
 import { analysisApi, isDemoMode, type AnalysisRequest, type ArtifactItem } from '../services/api'
+
+type ArtifactSource = 'upload' | 'volume' | 'github' | 'devops'
 
 const CLOUD_OPTIONS = [
   { value: 'aws', label: 'Amazon Web Services', icon: '☁️' },
@@ -86,9 +86,10 @@ export default function AnalysisPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [agentProgress, setAgentProgress] = useState<Record<string, 'pending' | 'running' | 'done' | 'skipped'>>({})
   const [artifactSource, setArtifactSource] = useState<ArtifactSource>('upload')
+  const [volumeConfig, setVolumeConfig] = useState({ codeFolder: '', iacFolder: '' })
   const [repoConfig, setRepoConfig] = useState({
-    github: { repoUrl: '', branch: 'main', token: '', folder: '' },
-    devops: { orgUrl: '', project: '', repo: '', branch: 'main', token: '' },
+    github: { repoUrl: '', branch: 'main', token: '', codeFolder: '', iacFolder: '' },
+    devops: { orgUrl: '', project: '', repo: '', branch: 'main', token: '', codeFolder: '', iacFolder: '' },
   })
   const [repoLoading, setRepoLoading] = useState(false)
 
@@ -249,27 +250,20 @@ export default function AnalysisPage() {
     await new Promise((r) => setTimeout(r, 600))
   }
 
-  const handleConnectRepo = async (source: 'github' | 'devops') => {
-    setRepoLoading(true)
-    try {
-      // In demo mode simulate a successful repo import with placeholder files
-      await new Promise((r) => setTimeout(r, 1200))
-      const label = source === 'github' ? repoConfig.github.repoUrl : repoConfig.devops.repo || repoConfig.devops.project
-      const codeFiles = ['app.py', 'service.py', 'utils.py'].map((f) => ({
-        filename: f,
-        content: `# Imported from ${source}: ${label}\n# File: ${f}`,
-      }))
-      const iacFiles = ['main.tf', 'variables.tf'].map((f) => ({
-        filename: f,
-        content: `# Imported from ${source}: ${label}\n# IaC: ${f}`,
-      }))
-      setForm((prev) => ({ ...prev, code_artifacts: codeFiles, iac_artifacts: iacFiles }))
-      toast.success(`Repository imported successfully (${codeFiles.length + iacFiles.length} files)`)
-    } catch {
-      toast.error('Failed to connect to repository')
-    } finally {
-      setRepoLoading(false)
+  // Build source_config for volume/github/devops modes, or undefined for upload mode
+  const buildSourceConfig = () => {
+    if (artifactSource === 'volume') {
+      return { type: 'volume' as const, code_folder: volumeConfig.codeFolder, iac_folder: volumeConfig.iacFolder }
     }
+    if (artifactSource === 'github') {
+      const g = repoConfig.github
+      return { type: 'github' as const, repo_url: g.repoUrl, branch: g.branch, token: g.token || undefined, code_folder: g.codeFolder, iac_folder: g.iacFolder }
+    }
+    if (artifactSource === 'devops') {
+      const d = repoConfig.devops
+      return { type: 'devops' as const, org_url: d.orgUrl, project: d.project, repo: d.repo, branch: d.branch, token: d.token, code_folder: d.codeFolder, iac_folder: d.iacFolder }
+    }
+    return undefined
   }
 
   const handleSubmit = async () => {
@@ -277,8 +271,19 @@ export default function AnalysisPage() {
       toast.error('Project name is required')
       return
     }
-    if (form.code_artifacts.length === 0 && form.iac_artifacts.length === 0) {
-      toast.error('Please upload at least one code or IaC file')
+    const sourceConfig = buildSourceConfig()
+    const hasInline = form.code_artifacts.length > 0 || form.iac_artifacts.length > 0
+    if (!sourceConfig && !hasInline) {
+      toast.error('Please upload at least one code or IaC file, or configure a source')
+      return
+    }
+    // Basic validation for each source type
+    if (artifactSource === 'github' && !repoConfig.github.repoUrl) {
+      toast.error('GitHub repository URL is required')
+      return
+    }
+    if (artifactSource === 'devops' && (!repoConfig.devops.orgUrl || !repoConfig.devops.project || !repoConfig.devops.repo)) {
+      toast.error('Azure DevOps org URL, project and repository are required')
       return
     }
 
@@ -287,15 +292,16 @@ export default function AnalysisPage() {
       // Show agent progress animation
       await runAgentAnimation()
 
+      const payload = { ...form, source_config: sourceConfig }
       const demo = await isDemoMode()
       if (demo) {
         // Demo mode: quickScan returns a full mock report immediately
-        const { data } = await analysisApi.quickScan(form)
+        const { data } = await analysisApi.quickScan(payload)
         toast.success('Analysis complete!')
         navigate(`/report/${data.session_id}`, { state: { report: data } })
       } else {
         // Real backend: start async analysis and navigate to report page for polling
-        const { data } = await analysisApi.start(form)
+        const { data } = await analysisApi.start(payload)
         toast.success('Analysis started — monitoring progress...')
         navigate(`/report/${data.session_id}`)
       }
@@ -518,9 +524,10 @@ export default function AnalysisPage() {
         <h2 className="font-semibold text-white">3. Artifact Source</h2>
 
         {/* Source tabs */}
-        <div className="flex gap-1 bg-gray-800 rounded-lg p-1 w-fit">
+        <div className="flex flex-wrap gap-1 bg-gray-800 rounded-lg p-1 w-fit">
           {([
             { key: 'upload', label: 'File Upload', icon: FolderGit2 },
+            { key: 'volume', label: 'Local Volume', icon: HardDrive },
             { key: 'github', label: 'GitHub', icon: Github },
             { key: 'devops', label: 'Azure DevOps', icon: Link2 },
           ] as const).map(({ key, label, icon: Icon }) => (
@@ -629,12 +636,48 @@ export default function AnalysisPage() {
           </div>
         )}
 
+        {/* ── Local Volume ── */}
+        {artifactSource === 'volume' && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 bg-amber-900/20 border border-amber-800/50 rounded-lg px-4 py-3 text-sm text-amber-300">
+              <HardDrive className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                Mount a local directory into the container at <code className="bg-gray-800 px-1 rounded">/app/uploads</code> via <code className="bg-gray-800 px-1 rounded">compose.yml</code>, then specify the sub-folders below. Leave blank to scan the volume root.
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Code folder <span className="text-gray-600">(relative to /app/uploads)</span></label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="myproject/src  (blank = root)"
+                  value={volumeConfig.codeFolder}
+                  onChange={(e) => setVolumeConfig((p) => ({ ...p, codeFolder: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">IaC folder <span className="text-gray-600">(relative to /app/uploads)</span></label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="myproject/infra  (blank = root)"
+                  value={volumeConfig.iacFolder}
+                  onChange={(e) => setVolumeConfig((p) => ({ ...p, iacFolder: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800 rounded-lg px-4 py-3">
+              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+              Files will be read server-side at analysis start — binary files and noise dirs are auto-skipped.
+            </div>
+          </div>
+        )}
+
         {/* ── GitHub ── */}
         {artifactSource === 'github' && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Repository URL</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Repository URL *</label>
                 <input
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="https://github.com/org/repo"
@@ -652,41 +695,40 @@ export default function AnalysisPage() {
                 />
               </div>
             </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1.5">Personal Access Token <span className="text-gray-600">(required for private repos)</span></label>
+              <input
+                type="password"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                value={repoConfig.github.token}
+                onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, token: e.target.value } }))}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Personal Access Token</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Code folder <span className="text-gray-600">(optional)</span></label>
                 <input
-                  type="password"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  value={repoConfig.github.token}
-                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, token: e.target.value } }))}
+                  placeholder="src/  (blank = repo root)"
+                  value={repoConfig.github.codeFolder}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, codeFolder: e.target.value } }))}
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Folder path (optional)</label>
+                <label className="block text-sm text-gray-400 mb-1.5">IaC folder <span className="text-gray-600">(optional)</span></label>
                 <input
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="src/ or infra/ (blank = root)"
-                  value={repoConfig.github.folder}
-                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, folder: e.target.value } }))}
+                  placeholder="infra/  (blank = repo root)"
+                  value={repoConfig.github.iacFolder}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, github: { ...p.github, iacFolder: e.target.value } }))}
                 />
               </div>
             </div>
-            <button
-              onClick={() => handleConnectRepo('github')}
-              disabled={repoLoading || !repoConfig.github.repoUrl}
-              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 disabled:opacity-40 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
-            >
-              {repoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
-              {repoLoading ? 'Connecting...' : 'Connect & Import Repository'}
-            </button>
-            {(form.code_artifacts.length > 0 || form.iac_artifacts.length > 0) && (
-              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-900/20 border border-green-800 rounded-lg px-4 py-2.5">
-                <CheckCircle2 className="w-4 h-4" />
-                {form.code_artifacts.length} code file(s) + {form.iac_artifacts.length} IaC file(s) imported from GitHub
-              </div>
-            )}
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800 rounded-lg px-4 py-3">
+              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+              Repository will be shallow-cloned server-side at analysis start (depth 1). Credentials are never stored.
+            </div>
           </div>
         )}
 
@@ -695,7 +737,7 @@ export default function AnalysisPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Organization URL</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Organization URL *</label>
                 <input
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="https://dev.azure.com/my-org"
@@ -704,7 +746,7 @@ export default function AnalysisPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Project</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Project *</label>
                 <input
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="MyProject"
@@ -715,7 +757,7 @@ export default function AnalysisPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Repository Name</label>
+                <label className="block text-sm text-gray-400 mb-1.5">Repository Name *</label>
                 <input
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="my-repo"
@@ -734,29 +776,39 @@ export default function AnalysisPage() {
               </div>
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1.5">Personal Access Token (PAT)</label>
+              <label className="block text-sm text-gray-400 mb-1.5">Personal Access Token (PAT) * <span className="text-gray-600">— scope: Code (read)</span></label>
               <input
                 type="password"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="PAT con scope Code (read)"
+                placeholder="PAT with Code (read) scope"
                 value={repoConfig.devops.token}
                 onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, token: e.target.value } }))}
               />
             </div>
-            <button
-              onClick={() => handleConnectRepo('devops')}
-              disabled={repoLoading || !repoConfig.devops.orgUrl || !repoConfig.devops.project}
-              className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 disabled:opacity-40 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
-            >
-              {repoLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-              {repoLoading ? 'Connecting...' : 'Connect & Import Repository'}
-            </button>
-            {(form.code_artifacts.length > 0 || form.iac_artifacts.length > 0) && (
-              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-900/20 border border-green-800 rounded-lg px-4 py-2.5">
-                <CheckCircle2 className="w-4 h-4" />
-                {form.code_artifacts.length} code file(s) + {form.iac_artifacts.length} IaC file(s) imported from Azure DevOps
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Code folder <span className="text-gray-600">(optional)</span></label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="src/  (blank = repo root)"
+                  value={repoConfig.devops.codeFolder}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, codeFolder: e.target.value } }))}
+                />
               </div>
-            )}
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">IaC folder <span className="text-gray-600">(optional)</span></label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="infra/  (blank = repo root)"
+                  value={repoConfig.devops.iacFolder}
+                  onChange={(e) => setRepoConfig((p) => ({ ...p, devops: { ...p.devops, iacFolder: e.target.value } }))}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800 rounded-lg px-4 py-3">
+              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+              Repository will be shallow-cloned server-side at analysis start (depth 1). Credentials are never stored.
+            </div>
           </div>
         )}
       </section>

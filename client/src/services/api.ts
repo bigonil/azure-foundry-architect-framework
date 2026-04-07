@@ -11,6 +11,36 @@ export interface ArtifactItem {
   content: string
 }
 
+// ── Source config types (mirror backend discriminated union) ─────────────────
+
+export interface VolumeSourceConfig {
+  type: 'volume'
+  code_folder: string
+  iac_folder: string
+}
+
+export interface GitHubSourceConfig {
+  type: 'github'
+  repo_url: string
+  branch: string
+  token?: string
+  code_folder: string
+  iac_folder: string
+}
+
+export interface DevOpsSourceConfig {
+  type: 'devops'
+  org_url: string
+  project: string
+  repo: string
+  branch: string
+  token: string
+  code_folder: string
+  iac_folder: string
+}
+
+export type SourceConfig = VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
+
 export interface AnalysisRequest {
   project_name: string
   source_cloud: 'aws' | 'azure' | 'gcp' | 'on-premises' | 'hybrid'
@@ -18,6 +48,7 @@ export interface AnalysisRequest {
   analysis_types: string[]
   code_artifacts: ArtifactItem[]
   iac_artifacts: ArtifactItem[]
+  source_config?: SourceConfig
   current_monthly_cost_usd?: number
   additional_context?: string
   use_foundry_mode?: boolean

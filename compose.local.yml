@@ -46,3 +46,4 @@ services:
 
 volumes:
   mongo_local_data:
+  efesto_uploads:

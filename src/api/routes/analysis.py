@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.agents.orchestrator import AnalysisRequest, OrchestratorAgent
-from src.api.models.requests import AnalysisRequestBody
+from src.api.models.requests import AnalysisRequestBody, DevOpsSourceConfig, GitHubSourceConfig, VolumeSourceConfig
 from src.api.models.responses import (
     AgentResultSummary,
     AnalysisReportResponse,
@@ -18,6 +18,8 @@ from src.api.models.responses import (
 )
 from src.cache.redis_cache import cache_get, cache_set, report_cache_key
 from src.config.settings import get_settings
+from src.tools.git_importer import clone_devops, clone_github
+from src.tools.volume_reader import IAC_EXTS, CODE_EXTS, read_volume_artifacts
 
 router = APIRouter(prefix="/api/analysis", tags=["Analysis"])
 logger = logging.getLogger(__name__)
@@ -28,6 +30,63 @@ _mongo_client: AsyncIOMotorClient = AsyncIOMotorClient(_settings.mongodb_uri)
 
 def _db():
     return _mongo_client[_settings.mongodb_database]
+
+
+async def _resolve_artifacts(request: AnalysisRequestBody) -> tuple[list[dict], list[dict]]:
+    """
+    Resolve code and IaC artifacts from the appropriate source:
+    - inline upload  → use code_artifacts / iac_artifacts as-is
+    - volume         → read from /app/uploads via volume_reader
+    - github         → shallow-clone via git_importer
+    - devops         → shallow-clone via git_importer
+    Returns (code_artifacts, iac_artifacts) as plain dicts.
+    """
+    cfg = request.source_config
+
+    if cfg is None:
+        # Plain upload mode
+        return (
+            [a.model_dump() for a in request.code_artifacts],
+            [a.model_dump() for a in request.iac_artifacts],
+        )
+
+    if isinstance(cfg, VolumeSourceConfig):
+        logger.info("Resolving artifacts from volume: code='%s' iac='%s'", cfg.code_folder, cfg.iac_folder)
+        code = read_volume_artifacts(cfg.code_folder, CODE_EXTS)
+        iac  = read_volume_artifacts(cfg.iac_folder,  IAC_EXTS)
+        return code, iac
+
+    if isinstance(cfg, GitHubSourceConfig):
+        logger.info("Cloning GitHub repo '%s' branch '%s'", cfg.repo_url, cfg.branch)
+        try:
+            code, iac = await clone_github(
+                repo_url=cfg.repo_url,
+                branch=cfg.branch,
+                token=cfg.token,
+                code_folder=cfg.code_folder,
+                iac_folder=cfg.iac_folder,
+            )
+        except (RuntimeError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=422, detail=f"GitHub clone failed: {exc}") from exc
+        return code, iac
+
+    if isinstance(cfg, DevOpsSourceConfig):
+        logger.info("Cloning Azure DevOps repo '%s/%s' branch '%s'", cfg.project, cfg.repo, cfg.branch)
+        try:
+            code, iac = await clone_devops(
+                org_url=cfg.org_url,
+                project=cfg.project,
+                repo=cfg.repo,
+                branch=cfg.branch,
+                token=cfg.token,
+                code_folder=cfg.code_folder,
+                iac_folder=cfg.iac_folder,
+            )
+        except (RuntimeError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=422, detail=f"Azure DevOps clone failed: {exc}") from exc
+        return code, iac
+
+    raise HTTPException(status_code=400, detail=f"Unknown source_config type: {cfg.type}")
 
 
 @router.post("/start", response_model=AnalysisSessionResponse, status_code=202)
@@ -42,8 +101,7 @@ async def start_analysis(
     recently the cached report is returned immediately with status 'completed'.
     Poll GET /api/analysis/{session_id} for results.
     """
-    code_artifacts = [a.model_dump() for a in request.code_artifacts]
-    iac_artifacts = [a.model_dump() for a in request.iac_artifacts]
+    code_artifacts, iac_artifacts = await _resolve_artifacts(request)
     analysis_types = [t.value for t in request.analysis_types]
 
     # ── Level-1 cache: full report ────────────────────────────────────────────
@@ -154,13 +212,14 @@ async def quick_scan(request: AnalysisRequestBody) -> AnalysisReportResponse:
     Suitable for small projects (< 10 files, no deep code analysis).
     Timeout: 120 seconds.
     """
+    code_artifacts, iac_artifacts = await _resolve_artifacts(request)
     analysis_request = AnalysisRequest(
         project_name=request.project_name,
         source_cloud=request.source_cloud.value,
         target_cloud=request.target_cloud.value,
         analysis_types=[t.value for t in request.analysis_types],
-        code_artifacts=[a.model_dump() for a in request.code_artifacts],
-        iac_artifacts=[a.model_dump() for a in request.iac_artifacts],
+        code_artifacts=code_artifacts,
+        iac_artifacts=iac_artifacts,
         current_monthly_cost_usd=request.current_monthly_cost_usd,
         additional_context=request.additional_context,
     )

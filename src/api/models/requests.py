@@ -1,8 +1,8 @@
 """API request models."""
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CloudProvider(str, Enum):
@@ -30,13 +30,65 @@ class ArtifactItem(BaseModel):
     encoding: str = "utf-8"
 
 
+# ── Source configuration models ───────────────────────────────────────────────
+
+class VolumeSourceConfig(BaseModel):
+    """Read artifacts from a directory mounted into the container at /app/uploads."""
+    type: Literal["volume"] = "volume"
+    code_folder: str = Field(
+        default="",
+        description="Path relative to /app/uploads to scan for code files. Empty = root.",
+    )
+    iac_folder: str = Field(
+        default="",
+        description="Path relative to /app/uploads to scan for IaC files. Empty = root.",
+    )
+
+
+class GitHubSourceConfig(BaseModel):
+    """Clone a GitHub repository server-side."""
+    type: Literal["github"] = "github"
+    repo_url: str = Field(..., description="HTTPS URL, e.g. https://github.com/org/repo")
+    branch: str = Field(default="main")
+    token: str | None = Field(default=None, description="GitHub PAT (required for private repos)")
+    code_folder: str = Field(default="", description="Sub-folder to scan for code files")
+    iac_folder: str = Field(default="", description="Sub-folder to scan for IaC files")
+
+
+class DevOpsSourceConfig(BaseModel):
+    """Clone an Azure DevOps repository server-side."""
+    type: Literal["devops"] = "devops"
+    org_url: str = Field(..., description="e.g. https://dev.azure.com/myorg")
+    project: str = Field(..., description="DevOps project name")
+    repo: str = Field(..., description="Repository name")
+    branch: str = Field(default="main")
+    token: str = Field(..., description="Azure DevOps Personal Access Token (PAT)")
+    code_folder: str = Field(default="", description="Sub-folder to scan for code files")
+    iac_folder: str = Field(default="", description="Sub-folder to scan for IaC files")
+
+
+SourceConfig = VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
+
+
+# ── Main request body ─────────────────────────────────────────────────────────
+
 class AnalysisRequestBody(BaseModel):
     project_name: str = Field(..., min_length=1, max_length=200)
     source_cloud: CloudProvider
     target_cloud: CloudProvider = CloudProvider.AZURE
     analysis_types: list[AnalysisType] = Field(default=[AnalysisType.ALL])
+
+    # Inline artifacts (upload mode) — optional when source_config is provided
     code_artifacts: list[ArtifactItem] = Field(default_factory=list)
     iac_artifacts: list[ArtifactItem] = Field(default_factory=list)
+
+    # External source (volume / github / devops) — optional
+    source_config: SourceConfig | None = Field(
+        default=None,
+        description="When set, artifacts are fetched server-side from this source.",
+        discriminator="type",
+    )
+
     current_monthly_cost_usd: float | None = Field(default=None, ge=0)
     additional_context: str = Field(default="", max_length=2000)
     use_foundry_mode: bool = Field(
@@ -57,6 +109,17 @@ class AnalysisRequestBody(BaseModel):
         if len(v) > 500:
             raise ValueError("Maximum 500 artifacts per request")
         return v
+
+    @model_validator(mode="after")
+    def validate_artifact_source(self) -> "AnalysisRequestBody":
+        has_inline = bool(self.code_artifacts or self.iac_artifacts)
+        has_source = self.source_config is not None
+        if not has_inline and not has_source:
+            raise ValueError(
+                "Provide at least one artifact source: upload files (code_artifacts / iac_artifacts) "
+                "or set source_config (volume, github, or devops)."
+            )
+        return self
 
     def to_agent_context(self) -> dict[str, Any]:
         return {
