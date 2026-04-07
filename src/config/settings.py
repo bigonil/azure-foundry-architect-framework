@@ -109,6 +109,13 @@ class Settings(BaseSettings):
     aws_pricing_enabled: bool = False
     gcp_pricing_enabled: bool = False
 
+    # ── Token pricing (Anthropic Claude claude-opus-4-6) ──────────────────────────────────
+    # Prices in USD per 1 million tokens — update when Anthropic changes pricing
+    claude_input_price_per_1m_usd: float = 15.0
+    claude_output_price_per_1m_usd: float = 75.0
+    eur_usd_rate: float = 0.92           # EUR/USD conversion; override with EUR_USD_RATE
+    monthly_budget_eur: float = 100.0   # Soft monthly budget shown in UI
+
     @field_validator("agent_temperature")
     @classmethod
     def validate_temperature(cls, v: float) -> float:

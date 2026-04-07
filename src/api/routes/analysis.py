@@ -167,6 +167,7 @@ async def start_analysis(
         iac_artifacts=iac_artifacts,
         current_monthly_cost_usd=request.current_monthly_cost_usd,
         additional_context=request.additional_context,
+        mcp_servers=[s.model_dump() for s in request.mcp_servers],
     )
 
     session_id = analysis_request.session_id
@@ -243,6 +244,7 @@ async def quick_scan(request: AnalysisRequestBody) -> AnalysisReportResponse:
         iac_artifacts=iac_artifacts,
         current_monthly_cost_usd=request.current_monthly_cost_usd,
         additional_context=request.additional_context,
+        mcp_servers=[s.model_dump() for s in request.mcp_servers],
     )
 
     try:
@@ -344,9 +346,15 @@ async def _execute_analysis(
                 status=result.status,
                 duration_seconds=result.duration_seconds,
                 error=result.error,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                cost_eur=result.cost_eur,
             )
             for name, result in report.agent_results.items()
         },
         created_at=time.time(),
         sonarqube_analysis=sonarqube_analysis,
+        total_input_tokens=report.total_input_tokens,
+        total_output_tokens=report.total_output_tokens,
+        total_cost_eur=report.total_cost_eur,
     )

@@ -39,6 +39,8 @@ class AgentResult:
         data: dict[str, Any],
         duration_seconds: float,
         error: str | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
     ):
         self.agent_name = agent_name
         self.session_id = session_id
@@ -47,6 +49,18 @@ class AgentResult:
         self.duration_seconds = duration_seconds
         self.error = error
         self.timestamp = time.time()
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+    @property
+    def cost_eur(self) -> float:
+        """Estimated cost in EUR based on current Anthropic pricing."""
+        settings = get_settings()
+        cost_usd = (
+            self.input_tokens * settings.claude_input_price_per_1m_usd / 1_000_000
+            + self.output_tokens * settings.claude_output_price_per_1m_usd / 1_000_000
+        )
+        return round(cost_usd * settings.eur_usd_rate, 6)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +71,9 @@ class AgentResult:
             "duration_seconds": self.duration_seconds,
             "error": self.error,
             "timestamp": self.timestamp,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_eur": self.cost_eur,
         }
 
 
@@ -176,7 +193,12 @@ class BaseAgent(ABC):
         return raw
 
     # ── Main entrypoint ────────────────────────────────────────────────────────
-    async def run(self, context: dict[str, Any], session_id: str | None = None) -> AgentResult:
+    async def run(
+        self,
+        context: dict[str, Any],
+        session_id: str | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ) -> AgentResult:
         """Execute the agent with the given context."""
         session_id = session_id or str(uuid.uuid4())
         start_time = time.time()
@@ -184,15 +206,21 @@ class BaseAgent(ABC):
         logger.info(f"[{self.agent_name}] Starting ({self.settings.llm_provider} mode) — session {session_id}")
 
         try:
+            in_tok = out_tok = 0
             if self.settings.llm_provider == "anthropic":
-                result_data = await self._run_anthropic(context, session_id)
+                result_data, in_tok, out_tok = await self._run_anthropic(
+                    context, session_id, mcp_servers=mcp_servers or []
+                )
             elif self.use_foundry_mode:
                 result_data = await self._run_foundry(context, session_id)
             else:
                 result_data = await self._run_azure_direct(context, session_id)
 
             duration = time.time() - start_time
-            logger.info(f"[{self.agent_name}] Completed in {duration:.1f}s")
+            logger.info(
+                f"[{self.agent_name}] Completed in {duration:.1f}s "
+                f"— tokens: {in_tok}↑ {out_tok}↓"
+            )
 
             return AgentResult(
                 agent_name=self.agent_name,
@@ -200,6 +228,8 @@ class BaseAgent(ABC):
                 status="success",
                 data=result_data,
                 duration_seconds=duration,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
             )
 
         except Exception as e:
@@ -223,8 +253,18 @@ class BaseAgent(ABC):
             )
         return self._anthropic_client
 
-    async def _run_anthropic(self, context: dict[str, Any], session_id: str) -> dict[str, Any]:
-        """Execute via Anthropic API (Claude claude-opus-4-6)."""
+    async def _run_anthropic(
+        self,
+        context: dict[str, Any],
+        session_id: str,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any], int, int]:
+        """Execute via Anthropic API (Claude claude-opus-4-6).
+
+        Returns (parsed_data, input_tokens, output_tokens).
+        When enabled URL-based MCP servers are provided, uses the Anthropic
+        MCP client beta (betas=["mcp-client-2025-04-04"]).
+        """
         import anthropic  # lazy import — ensures clean error if not installed
 
         client = self._get_anthropic_client()
@@ -235,13 +275,45 @@ class BaseAgent(ABC):
         )
         user_message = self.build_user_message(context)
 
+        # Filter to enabled URL-type MCP servers only (stdio requires local processes)
+        active_mcp = [
+            s for s in (mcp_servers or [])
+            if s.get("enabled", True) and s.get("type") == "url" and s.get("url")
+        ]
+
         try:
-            response = await client.messages.create(
-                model=self.settings.anthropic_model,
-                max_tokens=self.max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user_message}],
-            )
+            if active_mcp:
+                logger.info(
+                    "[%s] Using MCP beta with %d server(s): %s",
+                    self.agent_name,
+                    len(active_mcp),
+                    [s.get("name") for s in active_mcp],
+                )
+                response = await client.beta.messages.create(
+                    model=self.settings.anthropic_model,
+                    max_tokens=self.max_tokens,
+                    system=system,
+                    messages=[{"role": "user", "content": user_message}],
+                    mcp_servers=[
+                        {"type": "url", "url": s["url"], "name": s["name"]}
+                        for s in active_mcp
+                    ],
+                    betas=["mcp-client-2025-04-04"],
+                )
+                # Content may include tool-use blocks; find the last text block
+                raw = next(
+                    (b.text for b in reversed(response.content) if hasattr(b, "text")),
+                    "",
+                )
+            else:
+                response = await client.messages.create(
+                    model=self.settings.anthropic_model,
+                    max_tokens=self.max_tokens,
+                    system=system,
+                    messages=[{"role": "user", "content": user_message}],
+                )
+                raw = response.content[0].text
+
         except anthropic.AuthenticationError:
             raise RuntimeError(
                 "Anthropic API key invalid or missing. "
@@ -250,10 +322,12 @@ class BaseAgent(ABC):
         except anthropic.RateLimitError:
             raise RuntimeError("Anthropic rate limit hit. Please wait and retry.")
 
-        raw = response.content[0].text
+        in_tok: int = getattr(response.usage, "input_tokens", 0)
+        out_tok: int = getattr(response.usage, "output_tokens", 0)
+
         logger.debug(f"[{self.agent_name}] Raw response length: {len(raw)} chars")
         clean = self._extract_json(raw)
-        return self.parse_response(clean)
+        return self.parse_response(clean), in_tok, out_tok
 
     # ── Azure Direct mode ──────────────────────────────────────────────────────
     def _get_openai_client(self) -> Any:

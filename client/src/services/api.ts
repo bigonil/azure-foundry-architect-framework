@@ -66,6 +66,15 @@ export interface DevOpsSourceConfig {
 
 export type SourceConfig = BlobSourceConfig | VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
 
+export interface McpServerConfig {
+  id: string
+  name: string
+  type: 'url' | 'stdio'
+  url?: string
+  enabled: boolean
+  cloud: string
+}
+
 export interface AnalysisRequest {
   project_name: string
   source_cloud: 'aws' | 'azure' | 'gcp' | 'on-premises' | 'hybrid'
@@ -77,6 +86,7 @@ export interface AnalysisRequest {
   current_monthly_cost_usd?: number
   additional_context?: string
   use_foundry_mode?: boolean
+  mcp_servers?: McpServerConfig[]
 }
 
 export interface AgentResultSummary {
@@ -84,6 +94,9 @@ export interface AgentResultSummary {
   status: 'success' | 'partial' | 'failed'
   duration_seconds: number
   error?: string
+  input_tokens?: number
+  output_tokens?: number
+  cost_eur?: number
 }
 
 export interface AnalysisReport {
@@ -118,6 +131,9 @@ export interface AnalysisReport {
   }
   agent_results: Record<string, AgentResultSummary>
   created_at: number
+  total_input_tokens?: number
+  total_output_tokens?: number
+  total_cost_eur?: number
   sonarqube_analysis?: {
     project_key?: string
     project_name?: string

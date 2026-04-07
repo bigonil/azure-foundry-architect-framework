@@ -51,6 +51,7 @@ class AnalysisRequest:
         iac_artifacts: list[dict[str, Any]] | None = None,
         current_monthly_cost_usd: float | None = None,
         additional_context: str = "",
+        mcp_servers: list[dict[str, Any]] | None = None,
     ):
         self.session_id = str(uuid.uuid4())
         self.project_name = project_name
@@ -61,6 +62,7 @@ class AnalysisRequest:
         self.iac_artifacts = iac_artifacts or []
         self.current_monthly_cost_usd = current_monthly_cost_usd
         self.additional_context = additional_context
+        self.mcp_servers: list[dict[str, Any]] = mcp_servers or []
 
     def to_context(self) -> dict[str, Any]:
         return {
@@ -158,7 +160,9 @@ Return the orchestration plan as JSON.
                 )
             else:
                 agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
-                result = await agent.run(context, session_id=request.session_id)
+                result = await agent.run(
+                    context, session_id=request.session_id, mcp_servers=request.mcp_servers
+                )
                 if result.status == "success":
                     await cache_set(akey, result.to_dict(), agent_ttl)
 
@@ -182,10 +186,14 @@ Return the orchestration plan as JSON.
                         status=cached_data.get("status", "success"),
                         data=cached_data.get("data", {}),
                         duration_seconds=0.0,
+                        input_tokens=cached_data.get("input_tokens", 0),
+                        output_tokens=cached_data.get("output_tokens", 0),
                     )
                 async with semaphore:
                     agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
-                    result = await agent.run(context, session_id=request.session_id)
+                    result = await agent.run(
+                        context, session_id=request.session_id, mcp_servers=request.mcp_servers
+                    )
                     if result.status == "success":
                         await cache_set(akey, result.to_dict(), agent_ttl)
                     return agent_name, result
@@ -212,8 +220,9 @@ Return the orchestration plan as JSON.
         """Synthesize all agent results into the final AnalysisReport."""
         synthesis_prompt = self._build_synthesis_prompt(request, results)
 
+        synth_in_tok = synth_out_tok = 0
         if self.settings.llm_provider == "anthropic":
-            synthesis_data = await self._synthesize_anthropic(synthesis_prompt)
+            synthesis_data, synth_in_tok, synth_out_tok = await self._synthesize_anthropic(synthesis_prompt)
         else:
             synthesis_data = await self._synthesize_azure(synthesis_prompt)
 
@@ -224,10 +233,12 @@ Return the orchestration plan as JSON.
             target_cloud=request.target_cloud,
             agent_results=results,
             synthesis=synthesis_data,
+            synthesis_input_tokens=synth_in_tok,
+            synthesis_output_tokens=synth_out_tok,
         )
 
-    async def _synthesize_anthropic(self, synthesis_prompt: str) -> dict[str, Any]:
-        """Synthesize via Anthropic Claude claude-opus-4-6."""
+    async def _synthesize_anthropic(self, synthesis_prompt: str) -> tuple[dict[str, Any], int, int]:
+        """Synthesize via Anthropic Claude claude-opus-4-6. Returns (data, in_tok, out_tok)."""
         import anthropic  # lazy import
 
         client = anthropic.AsyncAnthropic(
@@ -246,7 +257,9 @@ Return the orchestration plan as JSON.
         )
         raw = response.content[0].text
         clean = self._extract_json(raw)
-        return json.loads(clean)
+        in_tok: int = getattr(response.usage, "input_tokens", 0)
+        out_tok: int = getattr(response.usage, "output_tokens", 0)
+        return json.loads(clean), in_tok, out_tok
 
     async def _synthesize_azure(self, synthesis_prompt: str) -> dict[str, Any]:
         """Synthesize via Azure OpenAI GPT-4o."""
@@ -348,7 +361,8 @@ Produce a JSON report with:
       "objectives": ["<specific objective from agent data>"],
       "key_milestones": ["<measurable milestone>"]
     }}
-  ]
+  ],
+  "effort_detail": <copy the effort_detail object verbatim from migration_planner agent results if present, otherwise null>
 }}
 """
 
@@ -364,6 +378,8 @@ class AnalysisReport:
         target_cloud: str,
         agent_results: dict[str, AgentResult],
         synthesis: dict[str, Any],
+        synthesis_input_tokens: int = 0,
+        synthesis_output_tokens: int = 0,
     ):
         self.session_id = session_id
         self.project_name = project_name
@@ -371,6 +387,32 @@ class AnalysisReport:
         self.target_cloud = target_cloud
         self.agent_results = agent_results
         self.synthesis = synthesis
+        self.synthesis_input_tokens = synthesis_input_tokens
+        self.synthesis_output_tokens = synthesis_output_tokens
+
+    @property
+    def total_input_tokens(self) -> int:
+        return (
+            sum(r.input_tokens for r in self.agent_results.values())
+            + self.synthesis_input_tokens
+        )
+
+    @property
+    def total_output_tokens(self) -> int:
+        return (
+            sum(r.output_tokens for r in self.agent_results.values())
+            + self.synthesis_output_tokens
+        )
+
+    @property
+    def total_cost_eur(self) -> float:
+        from src.config.settings import get_settings
+        s = get_settings()
+        cost_usd = (
+            self.total_input_tokens * s.claude_input_price_per_1m_usd / 1_000_000
+            + self.total_output_tokens * s.claude_output_price_per_1m_usd / 1_000_000
+        )
+        return round(cost_usd * s.eur_usd_rate, 4)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -382,4 +424,7 @@ class AnalysisReport:
             "agent_results": {
                 name: result.to_dict() for name, result in self.agent_results.items()
             },
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_cost_eur": self.total_cost_eur,
         }

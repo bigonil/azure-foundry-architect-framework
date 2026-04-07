@@ -16,6 +16,9 @@ class AgentResultSummary(BaseModel):
     status: str
     duration_seconds: float
     error: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_eur: float = 0.0
 
 
 class AnalysisReportResponse(BaseModel):
@@ -28,6 +31,10 @@ class AnalysisReportResponse(BaseModel):
     agent_results: dict[str, AgentResultSummary]
     created_at: float
     sonarqube_analysis: dict[str, Any] | None = None
+    # ── Token accounting ──────────────────────────────────────────────────────
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_eur: float = 0.0
 
 
 class HealthResponse(BaseModel):

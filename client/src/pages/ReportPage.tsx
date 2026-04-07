@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 import {
   CheckCircle2, XCircle, AlertTriangle,
   ChevronRight, Shield, ShieldCheck, Server, Code2, DollarSign, GitBranch,
-  BarChart3, Bug, ExternalLink, Activity,
+  BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
 } from 'lucide-react'
 import { analysisApi, type AnalysisReport } from '../services/api'
 
@@ -154,6 +154,7 @@ export default function ReportPage() {
             return (
               <div
                 key={name}
+                title={result.input_tokens ? `${result.input_tokens}↑ ${result.output_tokens}↓ tokens · €${result.cost_eur?.toFixed(4)}` : undefined}
                 className={clsx(
                   'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm',
                   result.status === 'success'
@@ -171,6 +172,11 @@ export default function ReportPage() {
           })}
         </div>
       </div>
+
+      {/* ── Token & Cost Panel ───────────────────────────────────────────────── */}
+      {(report.total_input_tokens ?? 0) > 0 && (
+        <TokenCostPanel report={report} />
+      )}
 
       {/* Executive Summary */}
       {synthesis.executive_summary && (
@@ -314,8 +320,225 @@ export default function ReportPage() {
         </div>
       )}
 
+      {/* ── Migration Effort Detail ───────────────────────────────────────────── */}
+      {synthesis.effort_detail && (
+        <EffortDetailSection effort={synthesis.effort_detail} />
+      )}
+
       {/* ── SonarCloud Static Analysis ───────────────────────────────────────── */}
       <SonarCloudSection data={report.sonarqube_analysis} />
+    </div>
+  )
+}
+
+// ── Token & Cost panel ───────────────────────────────────────────────────────
+
+function TokenCostPanel({ report }: { report: AnalysisReport }) {
+  const settings = { inputPer1M: 15, outputPer1M: 75, budgetEur: 100 }
+  const totalIn   = report.total_input_tokens ?? 0
+  const totalOut  = report.total_output_tokens ?? 0
+  const totalCost = report.total_cost_eur ?? 0
+  const budgetUsedPct = Math.min((totalCost / settings.budgetEur) * 100, 100)
+  const remaining = Math.max(settings.budgetEur - totalCost, 0)
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Zap className="w-4 h-4 text-yellow-400" />
+        <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Token Usage &amp; Cost</h3>
+        <span className="text-xs text-gray-500">Claude claude-opus-4-6 · €15/M in · €75/M out</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-4">
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-blue-300">{(totalIn / 1000).toFixed(1)}<span className="text-sm font-normal text-gray-400 ml-0.5">K</span></div>
+          <div className="text-xs text-gray-500 mt-1">Input Tokens</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-green-300">{(totalOut / 1000).toFixed(1)}<span className="text-sm font-normal text-gray-400 ml-0.5">K</span></div>
+          <div className="text-xs text-gray-500 mt-1">Output Tokens</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-yellow-300">€{totalCost.toFixed(4)}</div>
+          <div className="text-xs text-gray-500 mt-1">Analysis Cost</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className={clsx('text-2xl font-bold', remaining < 10 ? 'text-red-400' : 'text-white')}>€{remaining.toFixed(2)}</div>
+          <div className="text-xs text-gray-500 mt-1">Remaining (€{settings.budgetEur} budget)</div>
+        </div>
+      </div>
+
+      {/* Budget bar */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>Monthly budget used</span>
+          <span>{budgetUsedPct.toFixed(1)}%</span>
+        </div>
+        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className={clsx('h-full rounded-full transition-all', budgetUsedPct > 80 ? 'bg-red-500' : budgetUsedPct > 50 ? 'bg-yellow-500' : 'bg-green-500')}
+            style={{ width: `${budgetUsedPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Per-agent breakdown */}
+      {Object.keys(report.agent_results).some((k) => (report.agent_results[k].input_tokens ?? 0) > 0) && (
+        <div className="mt-4 space-y-1.5">
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Per-Agent Breakdown</div>
+          {Object.entries(report.agent_results).map(([name, r]) => {
+            if (!r.input_tokens) return null
+            const agentCost = r.cost_eur ?? 0
+            const barPct = totalCost > 0 ? (agentCost / totalCost) * 100 : 0
+            const Icon = AGENT_ICONS[name] ?? CheckCircle2
+            return (
+              <div key={name} className="flex items-center gap-3">
+                <Icon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                <span className="text-xs text-gray-400 w-32 truncate capitalize">{name.replace('_', ' ')}</span>
+                <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500/60 rounded-full" style={{ width: `${barPct}%` }} />
+                </div>
+                <span className="text-xs text-gray-500 w-20 text-right">
+                  {((r.input_tokens ?? 0) / 1000).toFixed(1)}K↑ {((r.output_tokens ?? 0) / 1000).toFixed(1)}K↓
+                </span>
+                <span className="text-xs text-yellow-400 w-16 text-right">€{agentCost.toFixed(4)}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Migration Effort Detail ───────────────────────────────────────────────────
+
+type EffortRole = { role: string; allocation_pct: number; person_days: number; daily_rate_eur: number; total_eur: number }
+type EffortPhase = { wave: number; name: string; person_days: number; hours: number; focus: string }
+type EffortComponent = { component: string; strategy: string; risk: string; base_days: number; final_days: number }
+
+type EffortDetail = {
+  total_person_days: number
+  total_hours: number
+  calculation_method: string
+  assumptions: string[]
+  roles: EffortRole[]
+  phases: EffortPhase[]
+  complexity_breakdown: EffortComponent[]
+  total_cost_eur: number
+}
+
+const RISK_COLORS: Record<string, string> = {
+  low: 'text-green-400 bg-green-500/10 border-green-500/30',
+  medium: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
+  high: 'text-red-400 bg-red-500/10 border-red-500/30',
+}
+
+function EffortDetailSection({ effort }: { effort: EffortDetail }) {
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+      {/* Header KPIs */}
+      <div className="flex items-center gap-2 mb-1">
+        <TrendingUp className="w-5 h-5 text-blue-400" />
+        <h3 className="font-semibold text-white">Migration Effort Breakdown</h3>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-3xl font-bold text-white">{effort.total_person_days}</div>
+          <div className="text-xs text-gray-500 mt-1">Person-Days</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-3xl font-bold text-white">{effort.total_hours.toLocaleString('it-IT')}</div>
+          <div className="text-xs text-gray-500 mt-1">Total Hours</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-green-400">€{effort.total_cost_eur?.toLocaleString('it-IT')}</div>
+          <div className="text-xs text-gray-500 mt-1">Labour Cost (EUR)</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <Clock className="w-5 h-5 text-blue-400 mx-auto mb-1" />
+          <div className="text-xs text-gray-400 leading-tight">{effort.calculation_method}</div>
+        </div>
+      </div>
+
+      {/* Assumptions */}
+      {effort.assumptions?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Assumptions</div>
+          <ul className="space-y-1">
+            {effort.assumptions.map((a, i) => (
+              <li key={i} className="text-sm text-gray-400 flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-gray-600 mt-0.5 flex-shrink-0" />
+                {a}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Roles */}
+      {effort.roles?.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 text-gray-500" />
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Team Allocation</div>
+          </div>
+          <div className="space-y-2">
+            {effort.roles.map((r) => {
+              const barPct = effort.total_person_days > 0 ? (r.person_days / effort.total_person_days) * 100 : 0
+              return (
+                <div key={r.role} className="flex items-center gap-3">
+                  <span className="text-sm text-gray-300 w-48 flex-shrink-0">{r.role}</span>
+                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500/50 rounded-full" style={{ width: `${barPct}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-400 w-24 text-right">{r.person_days}d · {r.allocation_pct}%</span>
+                  <span className="text-xs text-green-400 w-24 text-right">€{r.total_eur?.toLocaleString('it-IT')}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Wave phases */}
+      {effort.phases?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Wave Planning</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {effort.phases.map((p) => (
+              <div key={p.wave} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                <div className="text-[10px] text-blue-400 uppercase tracking-wider">Wave {p.wave}</div>
+                <div className="font-medium text-white text-sm mt-1">{p.name}</div>
+                <div className="text-xs text-gray-400 mt-1">{p.person_days}d · {p.hours}h</div>
+                <div className="text-xs text-gray-600 mt-1 leading-tight">{p.focus}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Complexity breakdown */}
+      {effort.complexity_breakdown?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Component Complexity</div>
+          <div className="space-y-1.5">
+            {effort.complexity_breakdown.map((c, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm">
+                <span className="text-gray-300 flex-1 truncate">{c.component}</span>
+                <span className="text-xs text-gray-500 capitalize">{c.strategy}</span>
+                <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded border', RISK_COLORS[c.risk] ?? RISK_COLORS.low)}>
+                  {c.risk}
+                </span>
+                <span className="text-xs text-gray-500 w-24 text-right">
+                  {c.base_days}d → <strong className="text-white">{c.final_days}d</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

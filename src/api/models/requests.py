@@ -87,6 +87,21 @@ class BlobSourceConfig(BaseModel):
 SourceConfig = VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig | BlobSourceConfig
 
 
+# ── MCP Server configuration ──────────────────────────────────────────────────
+
+class McpServerConfig(BaseModel):
+    """Configuration for an external MCP server used to enrich analysis."""
+    id: str = Field(..., description="Unique identifier, e.g. 'azure-mcp'")
+    name: str = Field(..., description="Display name, e.g. 'Azure MCP'")
+    type: Literal["url", "stdio"] = Field(default="url", description="Transport type")
+    url: str | None = Field(
+        default=None,
+        description="HTTP/SSE URL for type='url' servers. Must be set for the server to be called.",
+    )
+    enabled: bool = Field(default=True, description="Whether to include this server in the analysis call")
+    cloud: str = Field(default="", description="Cloud group label: azure | devops | aws | gcp")
+
+
 # ── Main request body ─────────────────────────────────────────────────────────
 
 class AnalysisRequestBody(BaseModel):
@@ -108,6 +123,10 @@ class AnalysisRequestBody(BaseModel):
 
     current_monthly_cost_usd: float | None = Field(default=None, ge=0)
     additional_context: str = Field(default="", max_length=2000)
+    mcp_servers: list[McpServerConfig] = Field(
+        default_factory=list,
+        description="Optional MCP servers to enrich the analysis (URL-type only, requires Anthropic mode)",
+    )
     use_foundry_mode: bool = Field(
         default=False,
         description="Use Azure AI Foundry Agent Service (true) or direct OpenAI (false)",

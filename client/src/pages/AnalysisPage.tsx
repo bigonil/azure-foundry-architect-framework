@@ -7,9 +7,9 @@ import {
   Play, Code2, Server, DollarSign,
   GitBranch, BarChart3, Shield, ShieldCheck, ChevronRight, Loader2,
   Sparkles, CheckCircle2, Github, Link2, FolderGit2, RefreshCw, FolderOpen, HardDrive,
-  Database, Upload, X,
+  Database, Upload, X, Zap, Info,
 } from 'lucide-react'
-import { analysisApi, artifactsApi, isDemoMode, type AnalysisRequest, type ArtifactItem, type BlobArtifactRef } from '../services/api'
+import { analysisApi, artifactsApi, isDemoMode, type AnalysisRequest, type ArtifactItem, type BlobArtifactRef, type McpServerConfig } from '../services/api'
 
 type ArtifactSource = 'upload' | 'blob' | 'volume' | 'github' | 'devops'
 
@@ -43,6 +43,25 @@ const AGENT_NAMES = [
   { key: 'waf_reviewer',      label: 'WAF Reviewer',      icon: Shield },
   { key: 'quality_analyzer',  label: 'Quality Analyzer',  icon: ShieldCheck },
 ]
+
+// ── Preset MCP servers ───────────────────────────────────────────────────────
+// URL-based servers work directly; stdio-based require local process setup.
+// Set a real URL in the `url` field to activate a server in Anthropic MCP beta calls.
+const DEFAULT_MCP_SERVERS: McpServerConfig[] = [
+  { id: 'azure-mcp',    name: 'Azure MCP',         type: 'url',   url: '',  enabled: false, cloud: 'azure'  },
+  { id: 'devops-mcp',   name: 'Azure DevOps MCP',  type: 'url',   url: '',  enabled: false, cloud: 'devops' },
+  { id: 'aws-cdk-mcp',  name: 'AWS CDK MCP',       type: 'stdio', url: '',  enabled: false, cloud: 'aws'    },
+  { id: 'aws-docs-mcp', name: 'AWS Docs MCP',       type: 'stdio', url: '',  enabled: false, cloud: 'aws'    },
+  { id: 'aws-cost-mcp', name: 'AWS Cost MCP',       type: 'stdio', url: '',  enabled: false, cloud: 'aws'    },
+  { id: 'gcp-mcp',      name: 'GCP MCP',            type: 'stdio', url: '',  enabled: false, cloud: 'gcp'    },
+]
+
+const MCP_CLOUD_LABELS: Record<string, string> = {
+  azure: '🔵 Azure',
+  devops: '🔷 Azure DevOps',
+  aws: '☁️ AWS',
+  gcp: '🔶 GCP',
+}
 
 // Demo pre-fill templates
 const DEMO_TEMPLATES = [
@@ -99,6 +118,7 @@ export default function AnalysisPage() {
     devops: { orgUrl: '', project: '', repo: '', branch: 'main', token: '', codeFolder: '', iacFolder: '' },
   })
   const [repoLoading, setRepoLoading] = useState(false)
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>(DEFAULT_MCP_SERVERS)
 
   const [form, setForm] = useState<AnalysisRequest>({
     project_name: '',
@@ -351,7 +371,7 @@ export default function AnalysisPage() {
       // Show agent progress animation
       await runAgentAnimation()
 
-      const payload = { ...form, source_config: sourceConfig }
+      const payload = { ...form, source_config: sourceConfig, mcp_servers: mcpServers }
       const demo = await isDemoMode()
       if (demo) {
         // Demo mode: quickScan returns a full mock report immediately
@@ -1004,6 +1024,102 @@ export default function AnalysisPage() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* MCP Enrichment Sources */}
+      <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-white">4. MCP Enrichment Sources</h2>
+            <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Beta
+            </span>
+          </div>
+          <span className="text-xs text-gray-500">Anthropic mode only · URL-type servers only</span>
+        </div>
+
+        <div className="flex items-start gap-2 bg-purple-900/20 border border-purple-800/40 rounded-lg px-4 py-3 text-xs text-purple-300">
+          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>
+            When enabled, MCP servers enrich analysis with live cloud context via Anthropic's MCP client beta.
+            <strong className="ml-1">URL-type servers</strong> require a publicly accessible HTTP/SSE endpoint.
+            Stdio servers need a locally running process — toggle on to include in request, but set a URL to activate.
+          </span>
+        </div>
+
+        {/* Group by cloud */}
+        {Object.entries(MCP_CLOUD_LABELS).map(([cloud, label]) => {
+          const servers = mcpServers.filter((s) => s.cloud === cloud)
+          if (!servers.length) return null
+          return (
+            <div key={cloud} className="space-y-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</div>
+              <div className="grid grid-cols-2 gap-2">
+                {servers.map((srv) => (
+                  <div
+                    key={srv.id}
+                    className={clsx(
+                      'rounded-lg border p-3 transition-colors',
+                      srv.enabled
+                        ? 'border-purple-600/40 bg-purple-900/20'
+                        : 'border-gray-700 bg-gray-800/40'
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Zap className={clsx('w-3.5 h-3.5', srv.enabled ? 'text-purple-400' : 'text-gray-600')} />
+                        <span className={clsx('text-sm font-medium', srv.enabled ? 'text-white' : 'text-gray-500')}>
+                          {srv.name}
+                        </span>
+                        <span className={clsx(
+                          'text-[9px] font-semibold px-1 py-0.5 rounded uppercase',
+                          srv.type === 'url'
+                            ? 'text-blue-400 bg-blue-500/10 border border-blue-500/30'
+                            : 'text-gray-500 bg-gray-700 border border-gray-600'
+                        )}>
+                          {srv.type}
+                        </span>
+                      </div>
+                      <div
+                        onClick={() =>
+                          setMcpServers((prev) =>
+                            prev.map((s) => s.id === srv.id ? { ...s, enabled: !s.enabled } : s)
+                          )
+                        }
+                        className={clsx(
+                          'relative w-8 h-4 rounded-full cursor-pointer transition-colors',
+                          srv.enabled ? 'bg-purple-600' : 'bg-gray-600'
+                        )}
+                      >
+                        <span className={clsx(
+                          'absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform',
+                          srv.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                        )} />
+                      </div>
+                    </div>
+                    {srv.type === 'url' && (
+                      <input
+                        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        placeholder="https://your-mcp-server.example.com/sse"
+                        value={srv.url ?? ''}
+                        onChange={(e) =>
+                          setMcpServers((prev) =>
+                            prev.map((s) => s.id === srv.id ? { ...s, url: e.target.value } : s)
+                          )
+                        }
+                      />
+                    )}
+                    {srv.type === 'stdio' && (
+                      <div className="text-[10px] text-gray-600 mt-1">
+                        Requires local process — convert to URL endpoint to activate
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </section>
 
       {/* Submit */}
