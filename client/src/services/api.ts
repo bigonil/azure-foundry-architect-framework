@@ -269,12 +269,12 @@ export const analysisApi = {
   },
 
   getReport: async (sessionId: string) => {
-    if (await isDemoMode()) return mockAnalysisApi.getReport(sessionId)
+    if (sessionId.startsWith('demo-') || await isDemoMode()) return mockAnalysisApi.getReport(sessionId)
     return api.get<AnalysisReport>(`/analysis/${sessionId}`)
   },
 
   getStatus: async (sessionId: string) => {
-    if (await isDemoMode()) return mockAnalysisApi.getStatus(sessionId)
+    if (sessionId.startsWith('demo-') || await isDemoMode()) return mockAnalysisApi.getStatus(sessionId)
     return api.get<SessionStatus>(`/analysis/${sessionId}/status`)
   },
 
