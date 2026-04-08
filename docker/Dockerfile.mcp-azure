@@ -2,12 +2,13 @@
 # Authentication: Azure Service Principal (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET)
 #   or Managed Identity in production.
 # SSE endpoint exposed at: http://mcp-azure:3333/sse  (Docker-internal)
-FROM node:22-alpine
+FROM node:22-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache netcat-openbsd \
-    && npm install -g supergateway@latest @azure/mcp@latest \
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g supergateway@latest \
     && npm cache clean --force
 
 EXPOSE 3333
@@ -22,8 +23,9 @@ ENV AZURE_SUBSCRIPTION_ID=""
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD nc -z localhost 3333 || exit 1
 
-# supergateway bridges stdio → SSE; Claude API connects to /sse
+# supergateway bridges stdio → SSE; backend connects to /sse
+# npx is used instead of the global binary to ensure PATH resolution on Alpine
 CMD ["supergateway", \
-     "--stdio", "azure-mcp server start", \
+     "--stdio", "npx -y @azure/mcp@latest server start", \
      "--port", "3333", \
      "--baseUrl", "http://mcp-azure:3333"]
