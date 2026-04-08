@@ -39,7 +39,7 @@ export default function ReportPage() {
   // If report was passed via navigation state (demo mode), use it directly
   const preloadedReport = location.state?.report as AnalysisReport | undefined
 
-  // ── Step 1: Poll /status every 3s while analysis is running ─────────────
+  // -- Step 1: Poll /status every 3s while analysis is running -------------
   const { data: statusData, error: statusError } = useQuery({
     queryKey: ['status', sessionId],
     queryFn: async () => {
@@ -56,7 +56,7 @@ export default function ReportPage() {
   const isRunning = !preloadedReport && (!statusData || statusData.status === 'running')
   const isFailed  = statusData?.status === 'failed'
 
-  // ── Step 2: Fetch report only once status = completed ───────────────────
+  // -- Step 2: Fetch report only once status = completed -------------------
   const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
     queryKey: ['report', sessionId],
     queryFn: async () => {
@@ -67,7 +67,7 @@ export default function ReportPage() {
     enabled: !!preloadedReport || (!!sessionId && statusData?.status === 'completed'),
   })
 
-  // ── Loading: still running ───────────────────────────────────────────────
+  // -- Loading: still running -----------------------------------------------
   if (isRunning) {
     const elapsed = statusData?.elapsed_seconds
     return (
@@ -87,7 +87,7 @@ export default function ReportPage() {
     )
   }
 
-  // ── Error: analysis failed or network error ──────────────────────────────
+  // -- Error: analysis failed or network error ------------------------------
   if (isFailed || statusError || reportError) {
     const detail = statusData?.error ?? (reportError as any)?.message ?? 'Unknown error'
     return (
@@ -101,7 +101,7 @@ export default function ReportPage() {
     )
   }
 
-  // ── Loading: report fetch in flight ─────────────────────────────────────
+  // -- Loading: report fetch in flight -------------------------------------
   if (reportLoading || !report) {
     return (
       <div className="flex flex-col items-center justify-center min-h-96 gap-4">
@@ -173,7 +173,7 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* ── Token & Cost Panel ───────────────────────────────────────────────── */}
+      {/* -- Token & Cost Panel ------------------------------------------------- */}
       {(report.total_input_tokens ?? 0) > 0 && (
         <TokenCostPanel report={report} />
       )}
@@ -320,18 +320,18 @@ export default function ReportPage() {
         </div>
       )}
 
-      {/* ── Migration Effort Detail ───────────────────────────────────────────── */}
+      {/* -- Migration Effort Detail --------------------------------------------- */}
       {synthesis.effort_detail && (
         <EffortDetailSection effort={synthesis.effort_detail} />
       )}
 
-      {/* ── SonarCloud Static Analysis ───────────────────────────────────────── */}
+      {/* -- SonarCloud Static Analysis ----------------------------------------- */}
       <SonarCloudSection data={report.sonarqube_analysis} />
     </div>
   )
 }
 
-// ── Token & Cost panel ───────────────────────────────────────────────────────
+// -- Token & Cost panel -------------------------------------------------------
 
 function TokenCostPanel({ report }: { report: AnalysisReport }) {
   const settings = { inputPer1M: 15, outputPer1M: 75, budgetEur: 100 }
@@ -411,7 +411,7 @@ function TokenCostPanel({ report }: { report: AnalysisReport }) {
   )
 }
 
-// ── Migration Effort Detail ───────────────────────────────────────────────────
+// -- Migration Effort Detail ---------------------------------------------------
 
 type EffortRole = { role: string; allocation_pct: number; person_days: number; daily_rate_eur: number; total_eur: number }
 type EffortPhase = { wave: number; name: string; person_days: number; hours: number; focus: string }
@@ -543,7 +543,7 @@ function EffortDetailSection({ effort }: { effort: EffortDetail }) {
   )
 }
 
-// ── SonarCloud section component ─────────────────────────────────────────────
+// -- SonarCloud section component ---------------------------------------------
 
 const SEVERITY_COLORS: Record<string, string> = {
   BLOCKER:  'text-red-400 bg-red-500/10 border-red-500/40',

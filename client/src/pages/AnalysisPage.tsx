@@ -44,7 +44,7 @@ const AGENT_NAMES = [
   { key: 'quality_analyzer',  label: 'Quality Analyzer',  icon: ShieldCheck },
 ]
 
-// ── Preset MCP servers ───────────────────────────────────────────────────────
+// -- Preset MCP servers-------------------------------------------------------
 // URL-based servers work directly; stdio-based require local process setup.
 // Set a real URL in the `url` field to activate a server in Anthropic MCP beta calls.
 const DEFAULT_MCP_SERVERS: McpServerConfig[] = [
@@ -627,7 +627,7 @@ export default function AnalysisPage() {
           ))}
         </div>
 
-        {/* ── File Upload ── */}
+        {/* -- File Upload -- */}
         {artifactSource === 'upload' && (
           <div className="grid grid-cols-2 gap-4">
             {/* Code drop zone */}
@@ -715,7 +715,7 @@ export default function AnalysisPage() {
             </div>
           </div>
 
-          {/* ── Persist to Volume toggle ── */}
+          {/* -- Persist to Volume toggle -- */}
           <div className={clsx(
             'rounded-xl border p-4 space-y-3 transition-colors',
             persistToVolume ? 'border-green-700/60 bg-green-900/10' : 'border-gray-700 bg-gray-800/40'
@@ -763,7 +763,7 @@ export default function AnalysisPage() {
           </div>
         )}
 
-        {/* ── Object Storage (MinIO / Azure Blob) ── */}
+        {/* -- Object Storage (MinIO / Azure Blob) -- */}
         {artifactSource === 'blob' && (
           <div className="space-y-4">
             <div className="flex items-start gap-3 bg-blue-900/20 border border-blue-800/50 rounded-lg px-4 py-3 text-sm text-blue-300">
@@ -849,7 +849,7 @@ export default function AnalysisPage() {
           </div>
         )}
 
-        {/* ── Local Volume ── */}
+        {/* -- Local Volume -- */}
         {artifactSource === 'volume' && (
           <div className="space-y-4">
             <div className="flex items-start gap-3 bg-amber-900/20 border border-amber-800/50 rounded-lg px-4 py-3 text-sm text-amber-300">
@@ -885,7 +885,7 @@ export default function AnalysisPage() {
           </div>
         )}
 
-        {/* ── GitHub ── */}
+        {/* -- GitHub -- */}
         {artifactSource === 'github' && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -945,7 +945,7 @@ export default function AnalysisPage() {
           </div>
         )}
 
-        {/* ── Azure DevOps ── */}
+        {/* -- Azure DevOps -- */}
         {artifactSource === 'devops' && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
