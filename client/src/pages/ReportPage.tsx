@@ -1,10 +1,12 @@
 import { useParams, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   CheckCircle2, XCircle, AlertTriangle,
   ChevronRight, Shield, ShieldCheck, Server, Code2, DollarSign, GitBranch,
   BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
+  Download, Printer, Loader2,
 } from 'lucide-react'
 import { analysisApi, type AnalysisReport } from '../services/api'
 
@@ -114,11 +116,52 @@ export default function ReportPage() {
     )
   }
 
+  const reportRef = useRef<HTMLDivElement>(null)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
+
+  const downloadPdf = async () => {
+    const element = reportRef.current
+    if (!element) return
+    setGeneratingPdf(true)
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const canvas = await html2canvas(element, {
+        scale: 1.5,
+        backgroundColor: '#030712',
+        useCORS: true,
+        logging: false,
+      })
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const imgH = (canvas.height * pageW) / canvas.width
+      let remaining = imgH
+      let posY = 0
+      pdf.addImage(imgData, 'PNG', 0, posY, pageW, imgH)
+      remaining -= pageH
+      while (remaining > 0) {
+        posY -= pageH
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, posY, pageW, imgH)
+        remaining -= pageH
+      }
+      pdf.save(`${report.project_name}-analysis.pdf`)
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
+
+  const handlePrint = () => window.print()
+
   const synthesis = report.synthesis
   const maturityScore = synthesis.maturity_score ?? 0
 
   return (
-    <div className="space-y-8">
+    <div id="report-content" ref={reportRef} className="space-y-8">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -139,9 +182,34 @@ export default function ReportPage() {
           </div>
         </div>
 
-        <div className="text-right">
-          <div className="text-3xl font-bold text-white">{maturityScore.toFixed(1)}<span className="text-gray-500 text-lg">/5</span></div>
-          <div className="text-xs text-gray-500 mt-1">Maturity Score</div>
+        <div className="flex items-center gap-3">
+          {/* Print / PDF actions */}
+          <div className="flex items-center gap-2 no-print" data-no-print>
+            <button
+              onClick={handlePrint}
+              title="Print report"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Print
+            </button>
+            <button
+              onClick={downloadPdf}
+              disabled={generatingPdf}
+              title="Download as PDF"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/50 bg-blue-600/10 text-xs text-blue-400 hover:bg-blue-600/20 disabled:opacity-50 transition-colors"
+            >
+              {generatingPdf
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Download className="w-3.5 h-3.5" />}
+              {generatingPdf ? 'Generating…' : 'Download PDF'}
+            </button>
+          </div>
+
+          <div className="text-right">
+            <div className="text-3xl font-bold text-white">{maturityScore.toFixed(1)}<span className="text-gray-500 text-lg">/5</span></div>
+            <div className="text-xs text-gray-500 mt-1">Maturity Score</div>
+          </div>
         </div>
       </div>
 
@@ -382,26 +450,32 @@ function TokenCostPanel({ report }: { report: AnalysisReport }) {
         </div>
       </div>
 
-      {/* Per-agent breakdown */}
-      {Object.keys(report.agent_results).some((k) => (report.agent_results[k].input_tokens ?? 0) > 0) && (
+      {/* Per-agent breakdown — always shown when agent_results exist */}
+      {Object.keys(report.agent_results).length > 0 && (
         <div className="mt-4 space-y-1.5">
           <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Per-Agent Breakdown</div>
           {Object.entries(report.agent_results).map(([name, r]) => {
-            if (!r.input_tokens) return null
+            const inTok   = r.input_tokens  ?? 0
+            const outTok  = r.output_tokens ?? 0
             const agentCost = r.cost_eur ?? 0
             const barPct = totalCost > 0 ? (agentCost / totalCost) * 100 : 0
             const Icon = AGENT_ICONS[name] ?? CheckCircle2
+            const hasTokens = inTok > 0 || outTok > 0
             return (
               <div key={name} className="flex items-center gap-3">
-                <Icon className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                <span className="text-xs text-gray-400 w-32 truncate capitalize">{name.replace('_', ' ')}</span>
+                <Icon className={clsx('w-3.5 h-3.5 flex-shrink-0', hasTokens ? 'text-gray-400' : 'text-gray-600')} />
+                <span className={clsx('text-xs w-32 truncate capitalize', hasTokens ? 'text-gray-400' : 'text-gray-600')}>
+                  {name.replace(/_/g, ' ')}
+                </span>
                 <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                   <div className="h-full bg-blue-500/60 rounded-full" style={{ width: `${barPct}%` }} />
                 </div>
-                <span className="text-xs text-gray-500 w-20 text-right">
-                  {((r.input_tokens ?? 0) / 1000).toFixed(1)}K↑ {((r.output_tokens ?? 0) / 1000).toFixed(1)}K↓
+                <span className={clsx('text-xs w-24 text-right', hasTokens ? 'text-gray-500' : 'text-gray-700')}>
+                  {(inTok / 1000).toFixed(1)}K↑ {(outTok / 1000).toFixed(1)}K↓
                 </span>
-                <span className="text-xs text-yellow-400 w-16 text-right">€{agentCost.toFixed(4)}</span>
+                <span className={clsx('text-xs w-16 text-right', hasTokens ? 'text-yellow-400' : 'text-gray-700')}>
+                  {hasTokens ? `€${agentCost.toFixed(4)}` : '—'}
+                </span>
               </div>
             )
           })}
