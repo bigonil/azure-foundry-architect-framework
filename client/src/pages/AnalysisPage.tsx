@@ -628,7 +628,7 @@ export default function AnalysisPage() {
         </div>
 
         {/* -- File Upload -- */}
-        {artifactSource === 'upload' && (
+        {artifactSource === 'upload' && (<>
           <div className="grid grid-cols-2 gap-4">
             {/* Code drop zone */}
             <div className="space-y-2">
@@ -761,7 +761,7 @@ export default function AnalysisPage() {
               </div>
             )}
           </div>
-        )}
+        </>)}
 
         {/* -- Object Storage (MinIO / Azure Blob) -- */}
         {artifactSource === 'blob' && (
