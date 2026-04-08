@@ -1,0 +1,29 @@
+# Azure DevOps MCP Server — @microsoft/azure-devops-mcp via supergateway (HTTP/SSE)
+# Authentication: Azure DevOps Personal Access Token (AZURE_DEVOPS_EXT_PAT)
+# Organization:   AZURE_DEVOPS_ORG (e.g. "mycompany")
+#
+# NOTE: The remote Azure DevOps MCP (https://mcp.dev.azure.com/{org}) requires
+# Entra OAuth and currently does NOT support Claude API / Anthropic clients.
+# This container uses the LOCAL server with PAT authentication instead.
+# SSE endpoint exposed at: http://mcp-devops:3334/sse  (Docker-internal)
+FROM node:22-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache netcat-openbsd \
+    && npm install -g supergateway@latest @microsoft/azure-devops-mcp@latest \
+    && npm cache clean --force
+
+EXPOSE 3334
+
+# Azure DevOps credentials
+ENV AZURE_DEVOPS_ORG=""
+ENV AZURE_DEVOPS_EXT_PAT=""
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD nc -z localhost 3334 || exit 1
+
+# Start azure-devops-mcp as stdio, bridge to SSE via supergateway
+CMD ["sh", "-c", \
+     "supergateway --stdio 'npx @microsoft/azure-devops-mcp' \
+      --port 3334 --baseUrl http://mcp-devops:3334"]

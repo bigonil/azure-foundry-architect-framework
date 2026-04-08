@@ -1,0 +1,29 @@
+# Azure MCP Server — @azure/mcp wrapped via supergateway for HTTP/SSE transport
+# Authentication: Azure Service Principal (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET)
+#   or Managed Identity in production.
+# SSE endpoint exposed at: http://mcp-azure:3333/sse  (Docker-internal)
+FROM node:22-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache netcat-openbsd \
+    && npm install -g supergateway@latest @azure/mcp@latest \
+    && npm cache clean --force
+
+EXPOSE 3333
+
+# Azure credentials — provided via compose.yml environment / .env
+# Leave empty to run in limited mode (doc/pricing tools still work)
+ENV AZURE_TENANT_ID=""
+ENV AZURE_CLIENT_ID=""
+ENV AZURE_CLIENT_SECRET=""
+ENV AZURE_SUBSCRIPTION_ID=""
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD nc -z localhost 3333 || exit 1
+
+# supergateway bridges stdio → SSE; Claude API connects to /sse
+CMD ["supergateway", \
+     "--stdio", "azure-mcp server start", \
+     "--port", "3333", \
+     "--baseUrl", "http://mcp-azure:3333"]

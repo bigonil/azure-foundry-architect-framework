@@ -13,6 +13,7 @@ from src.agents.code_analyzer import CodeAnalyzerAgent
 from src.agents.cost_optimizer import CostOptimizerAgent
 from src.agents.gap_analyzer import GapAnalyzerAgent
 from src.agents.infra_analyzer import InfraAnalyzerAgent
+from src.agents.mcp_enrichment_agent import McpEnrichmentAgent
 from src.agents.migration_planner import MigrationPlannerAgent
 from src.agents.quality_analyzer import QualityAnalyzerAgent
 from src.agents.waf_reviewer import WafReviewerAgent
@@ -82,9 +83,10 @@ class OrchestratorAgent(BaseAgent):
     """
     Master orchestrator that coordinates all specialist agents.
     Implements a phased execution strategy:
-    - Phase 1: Code + Infrastructure analysis (sequential, produce shared context)
-    - Phase 2: Cost, Migration, GAP, WAF analysis (parallel, consume Phase 1 results)
-    - Phase 3: Final report synthesis
+    - Phase 1:   Code + Infrastructure analysis (sequential, produce shared context)
+    - Phase 1.5: MCP Enrichment (optional, runs when Azure MCP servers are active)
+    - Phase 2:   Cost, Migration, GAP, WAF analysis (parallel, consume Phase 1+1.5 results)
+    - Phase 3:   Final report synthesis
     """
 
     @property
@@ -117,6 +119,47 @@ Return the orchestration plan as JSON.
         except json.JSONDecodeError:
             return {"raw": raw_response}
 
+    def _build_mcp_servers(self, request: AnalysisRequest) -> list[dict[str, Any]]:
+        """
+        Build the final list of active MCP servers by merging:
+        1. Pre-configured servers (internal Docker services, URLs from settings)
+        2. Custom user-provided servers (from the request, with explicit URLs)
+
+        Pre-configured servers: the request can toggle them on/off but cannot change their URL.
+        Custom servers: passed as-is if they have a URL and are enabled.
+        Only URL-type servers that are enabled and have a URL are returned.
+        """
+        final: list[dict[str, Any]] = []
+
+        # Pre-configured servers — URL injected from settings
+        for preset in self.settings.preconfigured_mcp_servers:
+            # Check if the request carries a toggle override for this server
+            override = next(
+                (s for s in request.mcp_servers if s.get("id") == preset["id"]),
+                None,
+            )
+            server = dict(preset)
+            if override is not None:
+                server["enabled"] = override.get("enabled", preset["enabled"])
+            final.append(server)
+
+        # Custom user-provided servers (not pre-configured)
+        for s in request.mcp_servers:
+            if not s.get("preconfigured", False) and s.get("url") and s.get("type") == "url":
+                final.append(s)
+
+        # Return only enabled URL-type servers with a valid URL
+        active = [
+            s for s in final
+            if s.get("enabled") and s.get("url") and s.get("type") == "url"
+        ]
+        if active:
+            logger.info(
+                "[Orchestrator] Active MCP servers: %s",
+                [s["name"] for s in active],
+            )
+        return active
+
     def _determine_agents_to_run(self, request: AnalysisRequest) -> tuple[list[str], list[str]]:
         """Determine which phase-1 and phase-2 agents to run based on analysis_types."""
         if "all" in request.analysis_types:
@@ -139,7 +182,11 @@ Return the orchestration plan as JSON.
         )
 
         context = request.to_context()
+        # Inject Azure DevOps org into context so McpEnrichmentAgent can reference it
+        context["azure_devops_org"] = self.settings.azure_devops_org
+
         phase1_agents, phase2_agents = self._determine_agents_to_run(request)
+        active_mcp = self._build_mcp_servers(request)
         all_results: dict[str, AgentResult] = {}
 
         agent_ttl = self.settings.cache_agent_ttl_hours * 3600
@@ -172,6 +219,35 @@ Return the orchestration plan as JSON.
             if result.status == "success":
                 context[f"{agent_name}_results"] = result.data
 
+        # ── Phase 1.5: MCP Enrichment (conditional) ───────────────────────────
+        if active_mcp and self.settings.llm_provider == "anthropic":
+            logger.info("[Orchestrator] Phase 1.5: MCP Enrichment with %d server(s)", len(active_mcp))
+            try:
+                enrichment_agent = McpEnrichmentAgent(use_foundry_mode=self.use_foundry_mode)
+                enrichment_result = await enrichment_agent.run(
+                    context,
+                    session_id=request.session_id,
+                    mcp_servers=active_mcp,
+                )
+                all_results["mcp_enrichment"] = enrichment_result
+                if enrichment_result.status == "success":
+                    context["mcp_enrichment_results"] = enrichment_result.data
+                    logger.info(
+                        "[Orchestrator] MCP enrichment succeeded — skills called: %s",
+                        enrichment_result.data.get("azure_skills_called", []),
+                    )
+                else:
+                    logger.warning(
+                        "[Orchestrator] MCP enrichment returned status=%s: %s",
+                        enrichment_result.status,
+                        enrichment_result.error,
+                    )
+            except Exception as exc:
+                # Non-fatal: pipeline continues without enrichment
+                logger.warning("[Orchestrator] MCP enrichment failed (non-fatal): %s", exc)
+        else:
+            logger.info("[Orchestrator] Phase 1.5: Skipping MCP enrichment (no active servers)")
+
         # ── Phase 2: Parallel analysis ─────────────────────────────────────────
         if phase2_agents:
             logger.info("[Orchestrator] Phase 2: Running %s in parallel", phase2_agents)
@@ -194,7 +270,7 @@ Return the orchestration plan as JSON.
                 async with semaphore:
                     agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
                     result = await agent.run(
-                        context, session_id=request.session_id, mcp_servers=request.mcp_servers
+                        context, session_id=request.session_id, mcp_servers=active_mcp
                     )
                     if result.status == "success":
                         await cache_set(akey, result.to_dict(), agent_ttl)
@@ -286,12 +362,15 @@ Return the orchestration plan as JSON.
         self, request: AnalysisRequest, results: dict[str, AgentResult]
     ) -> str:
         results_summary = {}
+        mcp_enrichment_data = None
         for name, result in results.items():
             results_summary[name] = {
                 "status": result.status,
                 "duration_seconds": result.duration_seconds,
                 "data": result.data if result.status == "success" else {"error": result.error},
             }
+            if name == "mcp_enrichment" and result.status == "success":
+                mcp_enrichment_data = result.data
 
         current_cost_eur = None
         if request.current_monthly_cost_usd:
@@ -304,6 +383,43 @@ Return the orchestration plan as JSON.
             else "Current monthly cost: not provided"
         )
 
+        # Build the MCP enrichment section if available
+        mcp_section = ""
+        if mcp_enrichment_data and not mcp_enrichment_data.get("parse_error"):
+            pricing = mcp_enrichment_data.get("azure_pricing_estimate", {})
+            readiness = mcp_enrichment_data.get("migration_readiness", {})
+            waf = mcp_enrichment_data.get("waf_assessment", {})
+            advisor = mcp_enrichment_data.get("advisor_recommendations", [])
+            ref_archs = mcp_enrichment_data.get("reference_architectures", [])
+            skills_called = mcp_enrichment_data.get("azure_skills_called", [])
+            mcp_section = f"""
+## Azure MCP Enrichment Data (REAL data from Azure Skills — use this to override estimates)
+
+Azure Skills called: {", ".join(skills_called) if skills_called else "none"}
+
+### Migration Readiness (from azure-migrate)
+{json.dumps(readiness, indent=2)}
+
+### Azure Pricing Estimate (from Azure Pricing skill — ACTUAL prices)
+{json.dumps(pricing, indent=2)}
+
+### Azure Advisor Recommendations
+{json.dumps(advisor[:10], indent=2)}
+
+### Well-Architected Framework Assessment
+{json.dumps(waf, indent=2)}
+
+### Reference Architectures
+{json.dumps(ref_archs[:3], indent=2)}
+
+IMPORTANT: When mcp_enrichment data is present, PREFER it over estimates:
+- Use azure_pricing_estimate.monthly_eur for cost calculations
+- Use migration_readiness.overall_score to inform maturity_score
+- Incorporate advisor_recommendations into top_10_actions
+- Reflect waf_assessment scores in key_findings and critical_risks
+- Link reference_architectures in the executive_summary
+"""
+
         return f"""
 Synthesize the following specialist agent analyses into a unified executive report.
 
@@ -311,7 +427,7 @@ Project: {request.project_name}
 Source Cloud: {request.source_cloud}
 Target Cloud: {request.target_cloud}
 {cost_context}
-
+{mcp_section}
 Agent Results:
 {json.dumps(results_summary, indent=2)}
 

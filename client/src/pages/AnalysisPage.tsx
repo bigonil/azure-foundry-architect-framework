@@ -44,23 +44,66 @@ const AGENT_NAMES = [
   { key: 'quality_analyzer',  label: 'Quality Analyzer',  icon: ShieldCheck },
 ]
 
-// -- Preset MCP servers-------------------------------------------------------
-// URL-based servers work directly; stdio-based require local process setup.
-// Set a real URL in the `url` field to activate a server in Anthropic MCP beta calls.
-const DEFAULT_MCP_SERVERS: McpServerConfig[] = [
-  { id: 'azure-mcp',    name: 'Azure MCP',         type: 'url',   url: '',  enabled: false, cloud: 'azure'  },
-  { id: 'devops-mcp',   name: 'Azure DevOps MCP',  type: 'url',   url: '',  enabled: false, cloud: 'devops' },
-  { id: 'aws-cdk-mcp',  name: 'AWS CDK MCP',       type: 'stdio', url: '',  enabled: false, cloud: 'aws'    },
-  { id: 'aws-docs-mcp', name: 'AWS Docs MCP',       type: 'stdio', url: '',  enabled: false, cloud: 'aws'    },
-  { id: 'aws-cost-mcp', name: 'AWS Cost MCP',       type: 'stdio', url: '',  enabled: false, cloud: 'aws'    },
-  { id: 'gcp-mcp',      name: 'GCP MCP',            type: 'stdio', url: '',  enabled: false, cloud: 'gcp'    },
+// -- Pre-configured MCP servers (internal Docker services, URL managed server-side) --------
+// Toggle only — URL is injected by the backend from settings.
+// Start with: docker compose --profile mcp up
+const PRECONFIGURED_MCP_SERVERS: McpServerConfig[] = [
+  {
+    id: 'azure-mcp-internal',
+    name: 'Azure MCP',
+    type: 'url',
+    url: '',          // real URL injected by backend
+    enabled: false,
+    cloud: 'azure',
+    preconfigured: true,
+  },
+  {
+    id: 'azure-devops-mcp-internal',
+    name: 'Azure DevOps MCP',
+    type: 'url',
+    url: '',
+    enabled: false,
+    cloud: 'devops',
+    preconfigured: true,
+  },
+]
+
+// Azure Skills exposed by the Azure MCP server (informational — shown in UI)
+const AZURE_SKILLS_BY_CATEGORY: Record<string, string[]> = {
+  'Migration': ['azure-migrate', 'cloud-architect', 'best-practices', 'terraform-best-practices'],
+  'WAF & Docs': ['well-architected-framework', 'documentation', 'bicep-schema'],
+  'Pricing & Advisor': ['pricing', 'advisor', 'quota', 'marketplace'],
+  'Compute': ['compute', 'aks', 'app-service', 'container-apps', 'functions', 'function-app'],
+  'Databases': ['sql', 'postgres', 'mysql', 'cosmos', 'redis'],
+  'Messaging': ['service-bus', 'event-hubs', 'event-grid', 'signalr'],
+  'Storage & Security': ['storage', 'file-shares', 'key-vault', 'role', 'policy'],
+  'Observability': ['monitor', 'application-insights', 'grafana', 'workbooks'],
+  'Resources': ['group-list', 'group-resource-list', 'subscription-list', 'resource-health'],
+}
+
+// Azure DevOps Tools exposed by the Azure DevOps MCP server
+const DEVOPS_SKILLS_BY_CATEGORY: Record<string, string[]> = {
+  'Core': ['core_list_projects', 'core_list_project_teams'],
+  'Repos': ['repo_list_repos', 'repo_list_pull_requests', 'repo_list_branches', 'repo_search_commits'],
+  'Work Items': ['wit_my_work_items', 'wit_list_backlogs', 'wit_get_work_item', 'search_workitem'],
+  'Pipelines': ['pipelines_get_builds', 'pipelines_list_runs', 'pipelines_get_build_log'],
+  'Wiki & Test': ['wiki_list_wikis', 'wiki_get_page_content', 'testplan_list_test_plans'],
+  'Search': ['search_code', 'search_wiki', 'search_workitem'],
+}
+
+// -- Custom MCP servers (user-provided URLs) ------------------------------------------
+const DEFAULT_CUSTOM_MCP_SERVERS: McpServerConfig[] = [
+  { id: 'aws-cdk-mcp',  name: 'AWS CDK MCP',  type: 'stdio', url: '', enabled: false, cloud: 'aws' },
+  { id: 'aws-docs-mcp', name: 'AWS Docs MCP', type: 'stdio', url: '', enabled: false, cloud: 'aws' },
+  { id: 'aws-cost-mcp', name: 'AWS Cost MCP', type: 'stdio', url: '', enabled: false, cloud: 'aws' },
+  { id: 'gcp-mcp',      name: 'GCP MCP',      type: 'stdio', url: '', enabled: false, cloud: 'gcp' },
 ]
 
 const MCP_CLOUD_LABELS: Record<string, string> = {
-  azure: '🔵 Azure',
-  devops: '🔷 Azure DevOps',
-  aws: '☁️ AWS',
-  gcp: '🔶 GCP',
+  azure: 'Azure',
+  devops: 'Azure DevOps',
+  aws: 'AWS',
+  gcp: 'GCP',
 }
 
 // Demo pre-fill templates
@@ -118,7 +161,11 @@ export default function AnalysisPage() {
     devops: { orgUrl: '', project: '', repo: '', branch: 'main', token: '', codeFolder: '', iacFolder: '' },
   })
   const [repoLoading, setRepoLoading] = useState(false)
-  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>(DEFAULT_MCP_SERVERS)
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([
+    ...PRECONFIGURED_MCP_SERVERS,
+    ...DEFAULT_CUSTOM_MCP_SERVERS,
+  ])
+  const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({})
 
   const [form, setForm] = useState<AnalysisRequest>({
     project_name: '',
@@ -1027,99 +1074,164 @@ export default function AnalysisPage() {
       </section>
 
       {/* MCP Enrichment Sources */}
-      <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
+      <section className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="font-semibold text-white">4. MCP Enrichment Sources</h2>
-            <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
-              Beta
-            </span>
+            <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">Beta</span>
           </div>
-          <span className="text-xs text-gray-500">Anthropic mode only · URL-type servers only</span>
+          <span className="text-xs text-gray-500">Anthropic mode only · Phase 1.5</span>
         </div>
 
         <div className="flex items-start gap-2 bg-purple-900/20 border border-purple-800/40 rounded-lg px-4 py-3 text-xs text-purple-300">
           <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>
-            When enabled, MCP servers enrich analysis with live cloud context via Anthropic's MCP client beta.
-            <strong className="ml-1">URL-type servers</strong> require a publicly accessible HTTP/SSE endpoint.
-            Stdio servers need a locally running process — toggle on to include in request, but set a URL to activate.
+            When enabled, a dedicated <strong>MCP Enrichment Agent</strong> (Phase 1.5) calls Azure Skills
+            to retrieve real Azure intelligence — migration readiness, actual pricing, Advisor recommendations,
+            WAF assessment, reference architectures — and injects it into the final report.
+            Requires <strong>docker compose --profile mcp up</strong> to start the internal MCP services.
           </span>
         </div>
 
-        {/* Group by cloud */}
-        {Object.entries(MCP_CLOUD_LABELS).map(([cloud, label]) => {
-          const servers = mcpServers.filter((s) => s.cloud === cloud)
-          if (!servers.length) return null
-          return (
-            <div key={cloud} className="space-y-2">
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</div>
-              <div className="grid grid-cols-2 gap-2">
-                {servers.map((srv) => (
-                  <div
-                    key={srv.id}
-                    className={clsx(
-                      'rounded-lg border p-3 transition-colors',
-                      srv.enabled
-                        ? 'border-purple-600/40 bg-purple-900/20'
-                        : 'border-gray-700 bg-gray-800/40'
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Zap className={clsx('w-3.5 h-3.5', srv.enabled ? 'text-purple-400' : 'text-gray-600')} />
-                        <span className={clsx('text-sm font-medium', srv.enabled ? 'text-white' : 'text-gray-500')}>
-                          {srv.name}
-                        </span>
-                        <span className={clsx(
-                          'text-[9px] font-semibold px-1 py-0.5 rounded uppercase',
-                          srv.type === 'url'
-                            ? 'text-blue-400 bg-blue-500/10 border border-blue-500/30'
-                            : 'text-gray-500 bg-gray-700 border border-gray-600'
-                        )}>
-                          {srv.type}
-                        </span>
+        {/* ── Azure Skills (Pre-configured internal services) ──────────────── */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">🔵 Azure Skills</span>
+            <span className="text-[10px] text-gray-600 bg-gray-800 px-2 py-0.5 rounded-full">Pre-configured · docker compose --profile mcp up</span>
+          </div>
+
+          {PRECONFIGURED_MCP_SERVERS.map((preset) => {
+            const srv = mcpServers.find((s) => s.id === preset.id) ?? preset
+            const skillsMap = srv.id === 'azure-mcp-internal' ? AZURE_SKILLS_BY_CATEGORY : DEVOPS_SKILLS_BY_CATEGORY
+            const isExpanded = expandedSkills[srv.id] ?? false
+            const skillCount = Object.values(skillsMap).flat().length
+            return (
+              <div
+                key={srv.id}
+                className={clsx(
+                  'rounded-xl border p-4 transition-colors',
+                  srv.enabled
+                    ? 'border-blue-600/50 bg-blue-900/10'
+                    : 'border-gray-700 bg-gray-800/30'
+                )}
+              >
+                {/* Header row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Zap className={clsx('w-4 h-4', srv.enabled ? 'text-blue-400' : 'text-gray-600')} />
+                    <span className={clsx('font-medium text-sm', srv.enabled ? 'text-white' : 'text-gray-400')}>
+                      {srv.name}
+                    </span>
+                    <span className="text-[9px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-1.5 py-0.5 rounded uppercase">
+                      Pre-configured
+                    </span>
+                    <span className="text-[9px] text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">
+                      {skillCount} skills
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSkills((p) => ({ ...p, [srv.id]: !isExpanded }))}
+                      className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                      {isExpanded ? 'Hide skills ▲' : 'View skills ▼'}
+                    </button>
+                    {/* Toggle */}
+                    <div
+                      onClick={() => setMcpServers((prev) => prev.map((s) => s.id === srv.id ? { ...s, enabled: !s.enabled } : s))}
+                      className={clsx(
+                        'relative w-9 h-5 rounded-full cursor-pointer transition-colors',
+                        srv.enabled ? 'bg-blue-600' : 'bg-gray-600'
+                      )}
+                    >
+                      <span className={clsx(
+                        'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                        srv.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                      )} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* URL note */}
+                <div className="mt-2 text-[10px] text-gray-600">
+                  {srv.id === 'azure-mcp-internal'
+                    ? 'Internal: http://mcp-azure:3333/sse · Azure Service Principal required (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET)'
+                    : 'Internal: http://mcp-devops:3334/sse · PAT required (AZURE_DEVOPS_ORG, AZURE_DEVOPS_EXT_PAT) · Note: remote https://mcp.dev.azure.com requires Entra OAuth (not yet supported by Anthropic API)'}
+                </div>
+
+                {/* Skills grid (expandable) */}
+                {isExpanded && (
+                  <div className="mt-3 space-y-2">
+                    {Object.entries(skillsMap).map(([category, skills]) => (
+                      <div key={category}>
+                        <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">{category}</div>
+                        <div className="flex flex-wrap gap-1">
+                          {skills.map((skill) => (
+                            <span key={skill} className="text-[10px] text-blue-300/70 bg-blue-900/20 border border-blue-800/30 px-1.5 py-0.5 rounded font-mono">
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* ── Custom / External Servers ─────────────────────────────────────── */}
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Custom / External Servers</div>
+          {Object.entries(MCP_CLOUD_LABELS)
+            .filter(([cloud]) => cloud === 'aws' || cloud === 'gcp')
+            .map(([cloud, label]) => {
+              const servers = mcpServers.filter((s) => s.cloud === cloud && !s.preconfigured)
+              if (!servers.length) return null
+              return (
+                <div key={cloud} className="space-y-1.5">
+                  <div className="text-[11px] text-gray-600">{cloud === 'aws' ? '☁️' : '🔶'} {label}</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {servers.map((srv) => (
                       <div
-                        onClick={() =>
-                          setMcpServers((prev) =>
-                            prev.map((s) => s.id === srv.id ? { ...s, enabled: !s.enabled } : s)
-                          )
-                        }
+                        key={srv.id}
                         className={clsx(
-                          'relative w-8 h-4 rounded-full cursor-pointer transition-colors',
-                          srv.enabled ? 'bg-purple-600' : 'bg-gray-600'
+                          'rounded-lg border p-3 transition-colors',
+                          srv.enabled ? 'border-purple-600/40 bg-purple-900/20' : 'border-gray-700 bg-gray-800/40'
                         )}
                       >
-                        <span className={clsx(
-                          'absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform',
-                          srv.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                        )} />
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className={clsx('w-3 h-3', srv.enabled ? 'text-purple-400' : 'text-gray-600')} />
+                            <span className={clsx('text-xs font-medium', srv.enabled ? 'text-white' : 'text-gray-500')}>{srv.name}</span>
+                            <span className="text-[8px] font-semibold text-gray-500 bg-gray-700 border border-gray-600 px-1 py-0.5 rounded uppercase">{srv.type}</span>
+                          </div>
+                          <div
+                            onClick={() => setMcpServers((prev) => prev.map((s) => s.id === srv.id ? { ...s, enabled: !s.enabled } : s))}
+                            className={clsx('relative w-7 h-3.5 rounded-full cursor-pointer transition-colors', srv.enabled ? 'bg-purple-600' : 'bg-gray-600')}
+                          >
+                            <span className={clsx('absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform', srv.enabled ? 'translate-x-3.5' : 'translate-x-0.5')} />
+                          </div>
+                        </div>
+                        {srv.type === 'url' ? (
+                          <input
+                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                            placeholder="https://your-mcp-server.example.com/sse"
+                            value={srv.url ?? ''}
+                            onChange={(e) => setMcpServers((prev) => prev.map((s) => s.id === srv.id ? { ...s, url: e.target.value } : s))}
+                          />
+                        ) : (
+                          <div className="text-[10px] text-gray-600 mt-1">Requires local process — convert to URL endpoint to activate</div>
+                        )}
                       </div>
-                    </div>
-                    {srv.type === 'url' && (
-                      <input
-                        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                        placeholder="https://your-mcp-server.example.com/sse"
-                        value={srv.url ?? ''}
-                        onChange={(e) =>
-                          setMcpServers((prev) =>
-                            prev.map((s) => s.id === srv.id ? { ...s, url: e.target.value } : s)
-                          )
-                        }
-                      />
-                    )}
-                    {srv.type === 'stdio' && (
-                      <div className="text-[10px] text-gray-600 mt-1">
-                        Requires local process — convert to URL endpoint to activate
-                      </div>
-                    )}
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
+                </div>
+              )
+            })}
+        </div>
       </section>
 
       {/* Submit */}

@@ -104,6 +104,48 @@ class Settings(BaseSettings):
     azure_storage_connection_string: str = Field(default="")
     azure_storage_container: str = "efesto-artifacts"
 
+    # ── Azure Identity (for MCP server service principal) ─────────────────────
+    azure_tenant_id: str = Field(default="")
+    azure_client_id: str = Field(default="")
+    azure_client_secret: str = Field(default="")
+    azure_subscription_id: str = Field(default="")
+
+    # ── Pre-configured MCP Servers ────────────────────────────────────────────
+    # URLs point to internal Docker services (http://mcp-azure:3333/sse).
+    # Set *_ENABLED=true + start with: docker compose --profile mcp up
+    azure_mcp_server_url: str = Field(default="")
+    azure_mcp_server_enabled: bool = False
+    azure_devops_mcp_server_url: str = Field(default="")
+    azure_devops_mcp_server_enabled: bool = False
+    # Azure DevOps org name — injected into the enrichment agent prompt context
+    azure_devops_org: str = Field(default="")
+
+    @property
+    def preconfigured_mcp_servers(self) -> list[dict]:
+        """Returns backend-managed MCP servers with their internal URLs."""
+        servers = []
+        if self.azure_mcp_server_url:
+            servers.append({
+                "id": "azure-mcp-internal",
+                "name": "Azure MCP",
+                "type": "url",
+                "url": self.azure_mcp_server_url,
+                "enabled": self.azure_mcp_server_enabled,
+                "cloud": "azure",
+                "preconfigured": True,
+            })
+        if self.azure_devops_mcp_server_url:
+            servers.append({
+                "id": "azure-devops-mcp-internal",
+                "name": "Azure DevOps MCP",
+                "type": "url",
+                "url": self.azure_devops_mcp_server_url,
+                "enabled": self.azure_devops_mcp_server_enabled,
+                "cloud": "devops",
+                "preconfigured": True,
+            })
+        return servers
+
     # ── Pricing ───────────────────────────────────────────────────────────────
     azure_pricing_api: str = "https://prices.azure.com/api/retail/prices"
     aws_pricing_enabled: bool = False

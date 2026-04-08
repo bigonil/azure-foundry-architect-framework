@@ -1,18 +1,19 @@
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, BrainCircuit, Code2, Server, DollarSign,
-  GitBranch, BarChart3, Shield, Eye, ShieldCheck,
+  GitBranch, BarChart3, Shield, Eye, ShieldCheck, Zap,
 } from 'lucide-react'
 import { DEMO_SESSION_IDS } from '../services/mockData'
 
 const agents = [
-  { icon: Code2,       name: 'Code Analyzer',     desc: 'Detects languages, frameworks, cloud SDK coupling, and technical debt',                       mvp: true  },
-  { icon: Server,      name: 'Infra Analyzer',     desc: 'Parses Terraform, Bicep, K8s, ARM — maps services to Azure equivalents',                      mvp: true  },
-  { icon: DollarSign,  name: 'Cost Optimizer',     desc: 'FinOps analysis: right-sizing, reserved instances, PaaS migration savings',                   mvp: false },
-  { icon: GitBranch,   name: 'Migration Planner',  desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations',                     mvp: false },
-  { icon: BarChart3,   name: 'GAP Analyzer',       desc: 'Current vs target state across 7 dimensions with remediation roadmap',                        mvp: false },
-  { icon: Shield,      name: 'WAF Reviewer',       desc: 'Scores architecture against all 5 Well-Architected Framework pillars',                        mvp: false },
-  { icon: ShieldCheck, name: 'Quality Analyzer',   desc: 'SonarQube-level static analysis on code and IaC: bugs, vulnerabilities, smells, debt',        mvp: false },
+  { icon: Code2,       name: 'Code Analyzer',     desc: 'Detects languages, frameworks, cloud SDK coupling, and technical debt',                                                  mvp: true  },
+  { icon: Server,      name: 'Infra Analyzer',     desc: 'Parses Terraform, Bicep, K8s, ARM — maps services to Azure equivalents',                                               mvp: true  },
+  { icon: Zap,         name: 'MCP Enrichment',     desc: 'Phase 1.5 — calls Azure Skills (azure-migrate, advisor, pricing, WAF, cloudarchitect) and Azure DevOps for real data', mvp: true  },
+  { icon: DollarSign,  name: 'Cost Optimizer',     desc: 'FinOps analysis: right-sizing, reserved instances, PaaS migration savings',                                            mvp: false },
+  { icon: GitBranch,   name: 'Migration Planner',  desc: 'CAF 6Rs strategy, wave planning, risk register, tooling recommendations',                                              mvp: false },
+  { icon: BarChart3,   name: 'GAP Analyzer',       desc: 'Current vs target state across 7 dimensions with remediation roadmap',                                                 mvp: false },
+  { icon: Shield,      name: 'WAF Reviewer',       desc: 'Scores architecture against all 5 Well-Architected Framework pillars',                                                  mvp: false },
+  { icon: ShieldCheck, name: 'Quality Analyzer',   desc: 'SonarQube-level static analysis on code and IaC: bugs, vulnerabilities, smells, debt',                                mvp: false },
 ]
 
 const demoReports = [

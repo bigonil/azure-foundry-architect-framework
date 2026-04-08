@@ -12,6 +12,11 @@ services:
       APP_ENV: development
       APP_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
       MONGODB_URI: "mongodb://admin:${MONGO_ROOT_PASSWORD:-changeme_local}@mongodb:27017/architect-framework?authSource=admin"
+      # Pre-configured MCP servers — internal Docker network URLs
+      AZURE_MCP_SERVER_URL: "http://mcp-azure:3333/sse"
+      AZURE_MCP_SERVER_ENABLED: "${AZURE_MCP_SERVER_ENABLED:-false}"
+      AZURE_DEVOPS_MCP_SERVER_URL: "http://mcp-devops:3334/sse"
+      AZURE_DEVOPS_MCP_SERVER_ENABLED: "${AZURE_DEVOPS_MCP_SERVER_ENABLED:-false}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -40,6 +45,48 @@ services:
     restart: unless-stopped
     networks:
       - app
+
+  # ── Azure MCP Server ────────────────────────────────────────────────────────
+  # Exposes Azure Skills via SSE at http://mcp-azure:3333/sse (Docker-internal)
+  # Skills: azure-migrate, advisor, pricing, cloudarchitect, WAF, bestpractices,
+  #         compute, AKS, App Service, Container Apps, SQL, Cosmos, Storage, etc.
+  # Start with: AZURE_MCP_SERVER_ENABLED=true docker compose up mcp-azure
+  mcp-azure:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-azure
+    environment:
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+    ports:
+      - "3333:3333"   # Exposed for local testing; agents use Docker-internal URL
+    restart: unless-stopped
+    networks:
+      - app
+    profiles:
+      - mcp
+
+  # ── Azure DevOps MCP Server ─────────────────────────────────────────────────
+  # Exposes Azure DevOps tools via SSE at http://mcp-devops:3334/sse
+  # Tools: repos, work items, pipelines, wikis, test plans, search
+  # Requires: AZURE_DEVOPS_ORG + AZURE_DEVOPS_EXT_PAT (PAT with read scopes)
+  # Start with: AZURE_DEVOPS_MCP_SERVER_ENABLED=true docker compose up mcp-devops
+  mcp-devops:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-devops
+    environment:
+      AZURE_DEVOPS_ORG: ${AZURE_DEVOPS_ORG:-}
+      AZURE_DEVOPS_EXT_PAT: ${AZURE_DEVOPS_EXT_PAT:-}
+    ports:
+      - "3334:3334"
+    restart: unless-stopped
+    networks:
+      - app
+    profiles:
+      - mcp
 
   minio:
     image: minio/minio:latest

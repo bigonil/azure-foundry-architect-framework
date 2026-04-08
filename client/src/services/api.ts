@@ -73,6 +73,10 @@ export interface McpServerConfig {
   url?: string
   enabled: boolean
   cloud: string
+  /** Server URL is managed server-side (internal Docker service). UI shows toggle only. */
+  preconfigured?: boolean
+  /** Bearer token for authenticated MCP servers (passed via Anthropic MCP beta). */
+  authorization_token?: string
 }
 
 export interface AnalysisRequest {

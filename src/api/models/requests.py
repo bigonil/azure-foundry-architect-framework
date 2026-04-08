@@ -100,6 +100,15 @@ class McpServerConfig(BaseModel):
     )
     enabled: bool = Field(default=True, description="Whether to include this server in the analysis call")
     cloud: str = Field(default="", description="Cloud group label: azure | devops | aws | gcp")
+    preconfigured: bool = Field(
+        default=False,
+        description="Server URL is managed server-side (internal Docker service). "
+                    "Frontend sends only the toggle; backend injects the real URL.",
+    )
+    authorization_token: str | None = Field(
+        default=None,
+        description="Bearer token passed to the Anthropic MCP beta for authenticated servers.",
+    )
 
 
 # ── Main request body ─────────────────────────────────────────────────────────

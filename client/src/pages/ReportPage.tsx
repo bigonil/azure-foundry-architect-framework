@@ -27,6 +27,7 @@ const IMPACT_COLORS: Record<string, string> = {
 const AGENT_ICONS: Record<string, any> = {
   code_analyzer: Code2,
   infra_analyzer: Server,
+  mcp_enrichment: Zap,
   cost_optimizer: DollarSign,
   migration_planner: GitBranch,
   gap_analyzer: BarChart3,
@@ -402,6 +403,9 @@ export default function ReportPage() {
 
       {/* -- SonarCloud Static Analysis ----------------------------------------- */}
       <SonarCloudSection data={report.sonarqube_analysis} />
+
+      {/* -- MCP Enrichment panel ------------------------------------------------ */}
+      <McpEnrichmentPanel report={report} />
     </div>
   )
 }
@@ -666,6 +670,180 @@ function MetricTile({ label, value, unit, color }: {
         {value ?? '—'}{unit && value != null ? <span className="text-sm font-normal text-gray-400 ml-0.5">{unit}</span> : null}
       </div>
       <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  )
+}
+
+// -- MCP Enrichment Panel ──────────────────────────────────────────────────────
+
+function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
+  const enrichment = (report.agent_results?.mcp_enrichment as any)
+  if (!enrichment || enrichment.status !== 'success') return null
+
+  const data = enrichment.data ?? {}
+  const readiness  = data.migration_readiness ?? {}
+  const pricing    = data.azure_pricing_estimate ?? {}
+  const advisor    = (data.advisor_recommendations ?? []) as any[]
+  const waf        = data.waf_assessment ?? {}
+  const refArchs   = (data.reference_architectures ?? []) as any[]
+  const practices  = (data.best_practices ?? []) as string[]
+  const skillsCalled = (data.azure_skills_called ?? []) as string[]
+  const quality    = data.enrichment_quality ?? 'unknown'
+
+  const wafPillars = ['reliability', 'security', 'cost_optimization', 'operational_excellence', 'performance_efficiency']
+  const wafColors: Record<number, string> = { 5: 'text-green-400', 4: 'text-blue-400', 3: 'text-yellow-400', 2: 'text-orange-400', 1: 'text-red-400' }
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-blue-800/40 p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-blue-400" />
+          <span className="font-semibold text-white">Azure MCP Enrichment</span>
+          <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Live Azure Data
+          </span>
+          <span className={clsx(
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider',
+            quality === 'high' ? 'text-green-400 bg-green-500/10 border border-green-500/30'
+              : quality === 'medium' ? 'text-yellow-400 bg-yellow-500/10 border border-yellow-500/30'
+              : 'text-gray-400 bg-gray-700'
+          )}>
+            Quality: {quality}
+          </span>
+        </div>
+        {skillsCalled.length > 0 && (
+          <span className="text-xs text-gray-500">{skillsCalled.length} Azure Skills called</span>
+        )}
+      </div>
+
+      {/* Skills called badges */}
+      {skillsCalled.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {skillsCalled.map((s) => (
+            <span key={s} className="text-[10px] text-blue-300/70 bg-blue-900/20 border border-blue-800/30 px-1.5 py-0.5 rounded font-mono">
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Migration Readiness */}
+        {readiness.overall_score != null && (
+          <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+            <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Migration Readiness</div>
+            <div className="text-2xl font-bold text-white">{readiness.overall_score}</div>
+            {readiness.suitability && (
+              <div className={clsx(
+                'text-xs font-medium px-2 py-0.5 rounded-full inline-block',
+                readiness.suitability === 'cloud' ? 'text-green-400 bg-green-500/10'
+                  : readiness.suitability === 'conditional' ? 'text-yellow-400 bg-yellow-500/10'
+                  : 'text-red-400 bg-red-500/10'
+              )}>
+                {readiness.suitability}
+              </div>
+            )}
+            {readiness.recommendations?.length > 0 && (
+              <ul className="space-y-1 mt-2">
+                {(readiness.recommendations as string[]).slice(0, 3).map((r, i) => (
+                  <li key={i} className="text-xs text-gray-400 flex gap-1.5"><span className="text-blue-400 mt-0.5">›</span>{r}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Azure Pricing Estimate */}
+        {pricing.monthly_eur != null && (
+          <div className="bg-gray-800 rounded-lg p-4 space-y-2">
+            <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Azure Pricing Estimate</div>
+            <div className="text-2xl font-bold text-green-400">€{Number(pricing.monthly_eur).toLocaleString()}<span className="text-sm font-normal text-gray-400">/mo</span></div>
+            {pricing.breakdown?.length > 0 && (
+              <div className="space-y-1 mt-1">
+                {(pricing.breakdown as any[]).slice(0, 4).map((b: any, i: number) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="text-gray-400 truncate">{b.service}{b.sku ? ` (${b.sku})` : ''}</span>
+                    <span className="text-gray-300 ml-2 shrink-0">€{Number(b.monthly_eur ?? 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* WAF Assessment */}
+      {Object.keys(waf).length > 0 && (
+        <div className="bg-gray-800 rounded-lg p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3">Well-Architected Framework (from Azure MCP)</div>
+          <div className="grid grid-cols-5 gap-2">
+            {wafPillars.map((pillar) => {
+              const p = waf[pillar] ?? {}
+              const score = p.score ?? 0
+              return (
+                <div key={pillar} className="text-center">
+                  <div className={clsx('text-xl font-bold', wafColors[score] ?? 'text-gray-400')}>{score || '—'}</div>
+                  <div className="text-[9px] text-gray-500 mt-0.5 capitalize">{pillar.replace(/_/g, ' ')}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Advisor Recommendations */}
+      {advisor.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Azure Advisor Recommendations</div>
+          <div className="space-y-1.5">
+            {advisor.slice(0, 6).map((rec: any, i: number) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800 rounded-lg px-3 py-2">
+                <span className={clsx(
+                  'text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0 mt-0.5',
+                  rec.severity === 'high' ? 'text-red-400 bg-red-500/10' : rec.severity === 'medium' ? 'text-yellow-400 bg-yellow-500/10' : 'text-green-400 bg-green-500/10'
+                )}>{rec.severity ?? 'info'}</span>
+                <span className="text-xs text-gray-400">{rec.recommendation}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Reference Architectures */}
+      {refArchs.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Reference Architectures</div>
+          <div className="grid grid-cols-3 gap-2">
+            {refArchs.slice(0, 3).map((arch: any, i: number) => (
+              <div key={i} className="bg-gray-800 rounded-lg p-3">
+                <div className="text-xs font-medium text-white mb-1">{arch.name}</div>
+                <div className="text-[10px] text-gray-500 leading-snug">{arch.description}</div>
+                {arch.url && (
+                  <a href={arch.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline mt-1 flex items-center gap-1">
+                    <ExternalLink className="w-2.5 h-2.5" /> Docs
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Best Practices */}
+      {practices.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Azure Best Practices</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {practices.slice(0, 8).map((p, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs text-gray-400">
+                <CheckCircle2 className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />
+                {p}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

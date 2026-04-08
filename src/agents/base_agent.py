@@ -295,7 +295,12 @@ class BaseAgent(ABC):
                     system=system,
                     messages=[{"role": "user", "content": user_message}],
                     mcp_servers=[
-                        {"type": "url", "url": s["url"], "name": s["name"]}
+                        {k: v for k, v in {
+                            "type": "url",
+                            "url": s["url"],
+                            "name": s["name"],
+                            "authorization_token": s.get("authorization_token"),
+                        }.items() if v is not None}
                         for s in active_mcp
                     ],
                     betas=["mcp-client-2025-04-04"],
