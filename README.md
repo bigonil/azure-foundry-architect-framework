@@ -66,14 +66,14 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
   │  cloudarchitect · WAF · bestpractices · AKS · SQL  │
   │  Azure DevOps: repos · pipelines · work items      │
   └──────────────────────────┬──────────────────────────┘
-                             │         ┌─────────────────┐
-                             │         │  mcp-azure:3333 │ @azure/mcp
-                             ├────────►│  (Docker)       │
-                             │         └─────────────────┘
-                             │         ┌─────────────────┐
-                             └────────►│ mcp-devops:3334 │ @microsoft/azure-devops-mcp
-                                       │  (Docker)       │
-                                       └─────────────────┘
+                             │         ┌─────────────────────────────┐
+                             │         │  mcp-azure:3333             │ @azure/mcp (.NET)
+                             ├────────►│  localhost:3333 (local dev) │
+                             │         └─────────────────────────────┘
+                             │         ┌─────────────────────────────┐
+                             └────────►│  mcp-devops:3334            │ @azure-devops/mcp
+                                       │  localhost:3334 (local dev) │
+                                       └─────────────────────────────┘
            │
            │ Phase 2 (Parallel)
            ▼
@@ -114,7 +114,7 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 azure-foundry-architect-framework/
 ├── src/
 │   ├── agents/
-│   │   ├── base_agent.py             # Abstract base (Anthropic + MCP beta + Azure + Foundry)
+│   │   ├── base_agent.py             # Abstract base (Anthropic + Azure + Foundry modes)
 │   │   ├── orchestrator.py           # Phases 1→1.5→2→3, _build_mcp_servers, token aggregation
 │   │   ├── code_analyzer.py          # + SonarCloud enrichment
 │   │   ├── infra_analyzer.py
@@ -145,7 +145,7 @@ azure-foundry-architect-framework/
 │   └── config/
 │       ├── settings.py               # Pydantic Settings (all env vars + preconfigured_mcp_servers property)
 │       └── prompts/
-│           ├── mcp_enrichment_agent.yaml  # NEW — Azure Skills system prompt
+│           ├── mcp_enrichment.yaml        # Azure Skills system prompt (Phase 1.5)
 │           └── *.yaml                # Per-agent system prompts
 ├── client/
 │   └── src/
@@ -475,16 +475,22 @@ AZURE_CLIENT_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 AZURE_CLIENT_SECRET="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 AZURE_SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
-# ── Azure MCP server (internal Docker URL — do not change) ─────────
-AZURE_MCP_SERVER_URL="http://mcp-azure:3333/sse"
-AZURE_MCP_SERVER_ENABLED=true         # ← set to true to enable
+# ── Azure MCP server ───────────────────────────────────────────────
+# Backend on HOST (local dev):      http://localhost:3333/sse
+# Backend in Docker container:      http://mcp-azure:3333/sse
+AZURE_MCP_SERVER_URL="http://localhost:3333/sse"
+AZURE_MCP_SERVER_ENABLED=true
 
 # ── Azure DevOps MCP server ────────────────────────────────────────
 AZURE_DEVOPS_ORG="mycompany"          # your Azure DevOps organization name
 AZURE_DEVOPS_EXT_PAT="xxxxxxxxx"      # PAT with: Code(Read), Work Items(Read), Build(Read)
-AZURE_DEVOPS_MCP_SERVER_URL="http://mcp-devops:3334/sse"
-AZURE_DEVOPS_MCP_SERVER_ENABLED=true  # ← set to true to enable
+# Backend on HOST (local dev):      http://localhost:3334/sse
+# Backend in Docker container:      http://mcp-devops:3334/sse
+AZURE_DEVOPS_MCP_SERVER_URL="http://localhost:3334/sse"
+AZURE_DEVOPS_MCP_SERVER_ENABLED=true
 ```
+
+> **How MCP enrichment works (local client)**: The backend connects to MCP servers via SSE directly from the Python process — no Anthropic MCP beta required. This means Docker-internal or localhost URLs both work, as long as the backend can reach them. The `mcp` Python SDK (`mcp[cli]`) handles the SSE transport and tool execution locally.
 
 **How to create a DevOps PAT:**
 1. Go to `https://dev.azure.com/{org}` → User Settings → Personal Access Tokens
@@ -508,11 +514,14 @@ docker compose logs -f mcp-azure
 docker compose logs -f mcp-devops
 ```
 
-The containers expose SSE endpoints on the Docker-internal network:
-- Azure MCP: `http://mcp-azure:3333/sse`
-- Azure DevOps MCP: `http://mcp-devops:3334/sse`
+The containers expose SSE endpoints on two addresses:
 
-These URLs are pre-configured in the backend via `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` — the frontend only sends the enable/disable toggle.
+| Run mode | Azure MCP | Azure DevOps MCP |
+|---|---|---|
+| Backend on host (local dev) | `http://localhost:3333/sse` | `http://localhost:3334/sse` |
+| Backend in Docker container | `http://mcp-azure:3333/sse` | `http://mcp-devops:3334/sse` |
+
+Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly. The frontend only sends the enable/disable toggle — URLs are managed server-side.
 
 ### 7d — Run an analysis with MCP enrichment
 
