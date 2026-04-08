@@ -120,9 +120,6 @@ export default function ReportPage() {
     )
   }
 
-  const reportRef = useRef<HTMLDivElement>(null)
-  const [generatingPdf, setGeneratingPdf] = useState(false)
-
   const downloadPdf = async () => {
     const element = reportRef.current
     if (!element) return
