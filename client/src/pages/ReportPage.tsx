@@ -38,6 +38,10 @@ export default function ReportPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const location = useLocation()
 
+  // Hooks must ALL be at the top — before any conditional returns
+  const reportRef = useRef<HTMLDivElement>(null)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
+
   // If report was passed via navigation state (demo mode), use it directly
   const preloadedReport = location.state?.report as AnalysisReport | undefined
 
