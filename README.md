@@ -11,13 +11,13 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 | Component | Local (MVP) | Production (Azure) |
 |---|---|---|
 | LLM | Claude Opus 4.6 (Anthropic API) | Azure OpenAI GPT-4o |
-| Active agents | Code Analyzer + Infra Analyzer | All 7 agents |
+| Active agents | All 7 + MCP Enrichment (Phase 1.5) | All 7 + MCP Enrichment |
 | State store | MongoDB 7 (Docker) | Azure Cosmos DB |
 | Cache | Redis 7 (Docker) | Azure Cache for Redis |
 | Object storage | MinIO (Docker, porta 9005) | Azure Blob Storage |
 | Static analysis | SonarCloud REST API | SonarCloud REST API |
 | Artifact sources | Upload / MinIO / Volume / Git clone | Upload / Blob Storage / Git clone |
-| MCP enrichment | Toggleable (URL-type, Anthropic beta) | Toggleable (URL-type, Anthropic beta) |
+| MCP enrichment | Pre-configured Docker services (`--profile mcp`) | Pre-configured internal services |
 | Token tracking | Per-agent + synthesis, EUR cost | Per-agent + synthesis, EUR cost |
 | Hosting | localhost | Azure Container Apps |
 
@@ -25,58 +25,86 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 
 ## Architecture Overview
 
-![Architecture — Azure and Local deployment](docs/architecture.png)
-
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        User / Frontend                          │
-│           React SPA (Vite + Tailwind) — MVP Mode badge         │
-└────────────────────────────┬────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        User / Frontend                               │
+│           React SPA (Vite + Tailwind) — localhost:5173              │
+└────────────────────────────┬────────────────────────────────────────┘
                              │ REST API
-┌────────────────────────────▼────────────────────────────────────┐
-│                      FastAPI Backend                            │
-│   POST /start → 202 async   GET /status   GET /report          │
-│   POST /artifacts/presign   Redis cache (2 levels)             │
-│   Token tracking (in/out per agent + synthesis + total EUR)    │
-└────────────────────────────┬────────────────────────────────────┘
-          ┌──────────────────┼──────────────────┐
-          ▼                  ▼                  ▼
-   ┌─────────────┐   ┌──────────────┐   ┌─────────────────┐
-   │   MongoDB   │   │    Redis     │   │ MinIO / Azure   │
-   │  (sessions  │   │  (2-level    │   │ Blob Storage    │
-   │   reports)  │   │   cache)     │   │  (artifacts)    │
-   └─────────────┘   └──────────────┘   └─────────────────┘
-                             │
-                   ┌─────────▼─────────┐
-                   │  Orchestrator     │
-                   │  Agent            │
-                   └─────────┬─────────┘
-            ┌────────────────┴────────────────┐
-            ▼                                 ▼
-   ┌──────────────────┐             ┌──────────────────┐
-   │  Code Analyzer   │             │  Infra Analyzer  │
-   │  + SonarCloud    │             │                  │
-   └──────────────────┘             └──────────────────┘
-            │  Phase 2 — coming soon
-            ▼
-   ┌──────────────────────────────────────────┐
-   │  Cost Opt │ Migration │ GAP │ WAF │ QA   │
-   └──────────────────────────────────────────┘
+┌────────────────────────────▼────────────────────────────────────────┐
+│                      FastAPI Backend — :8000                         │
+│   POST /start → 202 async   GET /status   GET /report               │
+│   POST /artifacts/presign   Redis cache (2 levels)                  │
+│   Token tracking (in/out per agent + synthesis + total EUR)         │
+└────────────────────────────┬────────────────────────────────────────┘
+        ┌───────────────────┬┴──────────────────┐
+        ▼                   ▼                   ▼
+ ┌─────────────┐   ┌──────────────┐   ┌─────────────────┐
+ │   MongoDB   │   │    Redis     │   │ MinIO / Azure   │
+ │  (sessions  │   │  (2-level    │   │ Blob Storage    │
+ │   reports)  │   │   cache)     │   │  (artifacts)    │
+ └─────────────┘   └──────────────┘   └─────────────────┘
+                            │
+                  ┌─────────▼─────────┐
+                  │  Orchestrator     │
+                  └─────────┬─────────┘
+                            │
+           ┌────────────────┴────────────────┐
+           │ Phase 1 (Sequential)            │
+           ▼                                 ▼
+  ┌──────────────────┐             ┌──────────────────┐
+  │  Code Analyzer   │             │  Infra Analyzer  │
+  │  + SonarCloud    │             │  (Terraform,     │
+  │                  │             │   Bicep, K8s…)   │
+  └──────────────────┘             └──────────────────┘
+           │
+           │ Phase 1.5 (Conditional — only when MCP servers active)
+           ▼
+  ┌─────────────────────────────────────────────────────┐
+  │  MCP Enrichment Agent                               │
+  │  Azure Skills: azure-migrate · advisor · pricing   │
+  │  cloudarchitect · WAF · bestpractices · AKS · SQL  │
+  │  Azure DevOps: repos · pipelines · work items      │
+  └──────────────────────────┬──────────────────────────┘
+                             │         ┌─────────────────┐
+                             │         │  mcp-azure:3333 │ @azure/mcp
+                             ├────────►│  (Docker)       │
+                             │         └─────────────────┘
+                             │         ┌─────────────────┐
+                             └────────►│ mcp-devops:3334 │ @microsoft/azure-devops-mcp
+                                       │  (Docker)       │
+                                       └─────────────────┘
+           │
+           │ Phase 2 (Parallel)
+           ▼
+  ┌───────────────────────────────────────────────────────┐
+  │  Cost Optimizer │ Migration Planner │ GAP Analyzer   │
+  │  WAF Reviewer   │ Quality Analyzer                   │
+  └───────────────────────────────────────────────────────┘
+           │
+           │ Phase 3 — Synthesis (Claude aggregates all results)
+           ▼
+  ┌──────────────────────────────────────┐
+  │  Final Report (stored in MongoDB)   │
+  └──────────────────────────────────────┘
 ```
 
 ---
 
 ## Specialist Agents
 
-| Agent | MVP | Role | Key Outputs |
+| Agent | Phase | Role | Key Outputs |
 |---|---|---|---|
-| `code_analyzer` | ✅ Active | App code + SonarCloud | Language inventory, cloud coupling, tech debt, quality gate |
-| `infra_analyzer` | ✅ Active | IaC analysis | Resource inventory, networking, security posture |
-| `cost_optimizer` | ⏳ Soon | FinOps | Savings, reserved instance ROI |
-| `migration_planner` | ⏳ Soon | CAF migration | 6Rs strategy, wave plan, effort detail, risk register |
-| `gap_analyzer` | ⏳ Soon | GAP analysis | Current vs target across 7 dimensions |
-| `waf_reviewer` | ⏳ Soon | WAF review | 5-pillar scoring with recommendations |
-| `quality_analyzer` | ⏳ Soon | Quality gate | SonarQube-level code & IaC analysis |
+| `code_analyzer` | 1 | App code + SonarCloud | Language inventory, cloud coupling, tech debt, quality gate |
+| `infra_analyzer` | 1 | IaC analysis | Resource inventory, networking, security posture, service mapping |
+| `mcp_enrichment` | 1.5 | Azure Skills enrichment | Migration readiness, real pricing, Advisor recs, WAF, reference archs |
+| `cost_optimizer` | 2 | FinOps | Savings, reserved instance ROI, right-sizing |
+| `migration_planner` | 2 | CAF migration | 6Rs strategy, wave plan, effort detail, risk register |
+| `gap_analyzer` | 2 | GAP analysis | Current vs target across 7 dimensions |
+| `waf_reviewer` | 2 | WAF review | 5-pillar scoring with recommendations |
+| `quality_analyzer` | 2 | Quality gate | SonarQube-level code & IaC analysis |
+
+> **Phase 1.5** runs only when at least one Azure MCP server is active. Failures are non-fatal — the pipeline continues without enrichment data.
 
 ---
 
@@ -86,59 +114,60 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 azure-foundry-architect-framework/
 ├── src/
 │   ├── agents/
-│   │   ├── base_agent.py          # Abstract base (Anthropic + MCP beta + Azure + Foundry)
-│   │   ├── orchestrator.py        # Master coordinator + token aggregation + per-agent cache
-│   │   ├── code_analyzer.py       # + SonarCloud enrichment
+│   │   ├── base_agent.py             # Abstract base (Anthropic + MCP beta + Azure + Foundry)
+│   │   ├── orchestrator.py           # Phases 1→1.5→2→3, _build_mcp_servers, token aggregation
+│   │   ├── code_analyzer.py          # + SonarCloud enrichment
 │   │   ├── infra_analyzer.py
+│   │   ├── mcp_enrichment_agent.py   # Phase 1.5 — Azure Skills via MCP
 │   │   ├── cost_optimizer.py
-│   │   ├── migration_planner.py   # + effort_detail (person-days, roles, waves, EUR cost)
+│   │   ├── migration_planner.py      # + effort_detail (person-days, roles, waves, EUR cost)
 │   │   ├── gap_analyzer.py
 │   │   ├── waf_reviewer.py
 │   │   └── quality_analyzer.py
 │   ├── tools/
-│   │   ├── blob_storage.py        # MinIO (boto3) + Azure Blob (azure-storage-blob)
-│   │   ├── git_importer.py        # Async shallow clone: GitHub + Azure DevOps
-│   │   ├── volume_reader.py       # Read artifacts from /app/uploads volume
-│   │   ├── code_scanner.py        # Language/framework/SDK detection
-│   │   ├── infra_parser.py        # Terraform/Bicep/K8s parsing
-│   │   ├── pricing_calculator.py  # Azure Pricing API client
-│   │   └── sonarcloud_client.py   # SonarCloud REST API client
+│   │   ├── blob_storage.py           # MinIO (boto3) + Azure Blob (azure-storage-blob)
+│   │   ├── git_importer.py           # Async shallow clone: GitHub + Azure DevOps
+│   │   ├── volume_reader.py          # Read artifacts from /app/uploads volume
+│   │   ├── code_scanner.py           # Language/framework/SDK detection
+│   │   ├── infra_parser.py           # Terraform/Bicep/K8s parsing
+│   │   ├── pricing_calculator.py     # Azure Pricing API client
+│   │   └── sonarcloud_client.py      # SonarCloud REST API client
 │   ├── cache/
-│   │   └── redis_cache.py         # Two-level Redis cache (report + per-agent)
+│   │   └── redis_cache.py            # Two-level Redis cache (report + per-agent)
 │   ├── api/
 │   │   ├── main.py
 │   │   ├── routes/
-│   │   │   ├── analysis.py        # /start /status /report /quick-scan
-│   │   │   └── artifacts.py       # /presign /upload-to-volume /delete
+│   │   │   ├── analysis.py           # /start /status /report /quick-scan
+│   │   │   └── artifacts.py          # /presign /upload-to-volume /delete
 │   │   └── models/
-│   │       ├── requests.py        # AnalysisRequestBody + SourceConfig + McpServerConfig
-│   │       └── responses.py       # AgentResultSummary + token fields + AnalysisReportResponse
+│   │       ├── requests.py           # AnalysisRequestBody + McpServerConfig (preconfigured, authorization_token)
+│   │       └── responses.py          # AgentResultSummary + token fields
 │   └── config/
-│       ├── settings.py            # Pydantic Settings (all env vars, including pricing)
-│       └── prompts/               # YAML system prompts per agent
-├── client/                        # React + Vite + Tailwind SPA
+│       ├── settings.py               # Pydantic Settings (all env vars + preconfigured_mcp_servers property)
+│       └── prompts/
+│           ├── mcp_enrichment_agent.yaml  # NEW — Azure Skills system prompt
+│           └── *.yaml                # Per-agent system prompts
+├── client/
 │   └── src/
 │       ├── pages/
-│       │   ├── HomePage.tsx
-│       │   ├── AnalysisPage.tsx   # 5 artifact tabs + MCP toggles
-│       │   └── ReportPage.tsx     # Token panel + effort detail + SonarCloud
-│       └── services/api.ts
-├── infra/                         # Azure Bicep (production IaC)
-│   ├── main.bicep
-│   └── modules/
+│       │   ├── HomePage.tsx          # + MCP Enrichment in agent list
+│       │   ├── AnalysisPage.tsx      # Pre-configured Azure MCP toggles + custom servers
+│       │   └── ReportPage.tsx        # McpEnrichmentPanel + TokenCostPanel + EffortDetail
+│       └── services/api.ts           # McpServerConfig + preconfigured/authorization_token
 ├── docker/
 │   ├── Dockerfile.api
 │   ├── Dockerfile.client
+│   ├── Dockerfile.mcp-azure          # NEW — @azure/mcp via supergateway SSE
+│   ├── Dockerfile.mcp-devops         # NEW — @microsoft/azure-devops-mcp via supergateway SSE
 │   └── nginx.conf
+├── infra/                            # Azure Bicep (production IaC)
 ├── scripts/
-│   └── setup-rbac.sh             # RBAC role assignments post-deploy
-├── docs/
-│   └── MinIo_GitClone_Vol.md     # Storage architecture analysis
-├── compose.local.yml              # MongoDB + Redis + MinIO (local dev, no build)
-├── compose.yml                    # Full stack (production-like Docker, includes build)
+│   └── setup-rbac.sh
+├── compose.local.yml                 # MongoDB + Redis + MinIO (local dev, no build)
+├── compose.yml                       # Full stack + mcp-azure + mcp-devops (--profile mcp)
 ├── pyproject.toml
 ├── .env.example
-└── .env                           # Local secrets (never commit)
+└── .env
 ```
 
 ---
@@ -146,6 +175,7 @@ azure-foundry-architect-framework/
 ## Feature Summary
 
 ### Token Tracking & Cost
+
 Every Anthropic API call captures `input_tokens` and `output_tokens` via `response.usage`.
 Costs are computed in EUR using configurable pricing:
 
@@ -158,50 +188,68 @@ Costs are computed in EUR using configurable pricing:
 
 The report page shows:
 - Total input/output tokens and EUR cost for the full analysis
-- Per-agent breakdown with proportional bars
+- Per-agent breakdown with proportional bars (all agents shown, including those with 0 tokens)
 - Remaining budget and percentage used (color-coded)
 
-### MCP Enrichment Sources (Beta)
-Analysis agents can optionally call external **MCP servers** for live cloud context.
-Uses Anthropic's MCP client beta: `betas=["mcp-client-2025-04-04"]`.
+### Maturity Score
 
-Preset servers (toggled from the UI):
+Displayed in the report header. Computed by Claude during synthesis (Phase 3), scored 1.0–5.0:
 
-| Server | Cloud | Type | Notes |
-|---|---|---|---|
-| Azure MCP | Azure | url | Requires hosted HTTP/SSE endpoint |
-| Azure DevOps MCP | Azure DevOps | url | Requires hosted HTTP/SSE endpoint |
-| AWS CDK MCP | AWS | stdio | Requires local process setup |
-| AWS Docs MCP | AWS | stdio | Requires local process setup |
-| AWS Cost MCP | AWS | stdio | Requires local process setup |
-| GCP MCP | GCP | stdio | Requires local process setup |
+| Score | Meaning |
+|---|---|
+| 1.0–2.0 | Legacy / high migration risk |
+| 2.0–3.5 | Moderate coupling, refactoring required |
+| 3.5–5.0 | Cloud-native / migration-ready |
 
-**URL-type** servers are injected into the Anthropic call when enabled and a URL is set.
-**Stdio-type** servers require a running local process; convert to a URL endpoint (e.g. via an HTTP proxy) to activate.
+Based on: **code quality** (SonarCloud metrics + static analysis) + **cloud coupling score** (how tightly the code is bound to the source provider) + **infrastructure complexity** (resource count, service dependencies).
+
+### MCP Enrichment — Phase 1.5
+
+When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs between Phase 1 and Phase 2. It calls Azure Skills to retrieve **real Azure intelligence** and injects it into the synthesis prompt — so the final report uses actual pricing, actual migration readiness scores, and real Azure Advisor recommendations instead of estimates.
+
+**Azure MCP Skills called (all relevant ones per scenario):**
+
+| Category | Skills |
+|---|---|
+| Migration | `azuremigrate`, `cloudarchitect`, `get_azure_bestpractices`, `azureterraformbestpractices` |
+| WAF & Docs | `wellarchitectedframework`, `documentation`, `bicepschema` |
+| Pricing & Advisor | `pricing`, `advisor`, `quota`, `marketplace` |
+| Compute | `compute`, `aks`, `appservice`, `containerapps`, `functionapp`, `functions` |
+| Databases | `sql`, `postgres`, `mysql`, `cosmos`, `redis` |
+| Messaging | `servicebus`, `eventhubs`, `eventgrid`, `signalr` |
+| Storage & Security | `storage`, `fileshares`, `keyvault`, `role`, `policy` |
+| Observability | `monitor`, `applicationinsights`, `grafana`, `workbooks` |
+| Resources | `group_list`, `group_resource_list`, `subscription_list`, `resourcehealth` |
+
+**Azure DevOps MCP Tools (if enabled):**
+
+| Toolset | Tools |
+|---|---|
+| Repos | `repo_list_repos_by_project`, `repo_list_pull_requests`, `repo_list_branches`, `repo_search_commits` |
+| Work Items | `wit_my_work_items`, `wit_list_backlogs`, `wit_get_work_item`, `search_workitem` |
+| Pipelines | `pipelines_get_builds`, `pipelines_list_runs`, `pipelines_get_build_status`, `pipelines_get_build_log` |
+| Wiki & Test | `wiki_list_wikis`, `wiki_get_page_content`, `testplan_list_test_plans` |
+| Search | `search_code`, `search_wiki` |
+
+> **Note on Azure DevOps Remote MCP**: The remote endpoint `https://mcp.dev.azure.com/{org}` requires Entra OAuth and currently does **not** support the Anthropic API MCP client (requires dynamic OAuth client registration). The Docker service uses the **local** `@microsoft/azure-devops-mcp` server authenticated via PAT instead.
 
 ### Detailed Migration Effort
+
 The `migration_planner` agent outputs an `effort_detail` block with:
 - **Total person-days and hours** (base × strategy factor × risk multiplier)
-- **Calculation method** explanation
 - **Team roles** with allocation %, person-days, daily rate EUR, total labour cost
 - **Wave planning** (Wave 0: Foundation → Wave 3: Complex workloads)
 - **Per-component complexity** (base days → final days with strategy + risk applied)
-
-Strategy factors: Rehost ×1.0, Replatform ×1.5, Refactor ×3.0.
-Risk multipliers: Low ×1.0, Medium ×1.3, High ×1.6.
 
 ### Artifact Source Options
 
 | Tab | How it works | Best for |
 |---|---|---|
-| **File Upload** | Drag & drop files + "Add Folder" button (browser → JSON body) | Quick tests, small projects |
+| **File Upload** | Drag & drop files + "Add Folder" (browser → JSON body) | Quick tests, small projects |
 | **Object Storage** | Presigned PUT → MinIO/Azure Blob (browser → storage direct) | Large files, production parity |
 | **Local Volume** | Backend reads `/app/uploads` at analysis start | CI/CD, persistent reuse |
 | **GitHub** | Server-side shallow clone (`--depth 1`) | Code on GitHub |
 | **Azure DevOps** | Server-side shallow clone with PAT | Code on Azure DevOps |
-
-The **Persist to volume** toggle in the File Upload tab saves a copy to `/app/uploads`
-and shows the paths for reuse in the Local Volume tab.
 
 ---
 
@@ -236,7 +284,7 @@ git checkout 01_03_02
 cp .env.example .env
 ```
 
-Open `.env` and fill in at minimum the mandatory variables:
+Open `.env` and fill in at minimum:
 
 ```env
 # ── LLM (mandatory) ───────────────────────────────────────────────
@@ -253,18 +301,18 @@ MONGODB_DATABASE=efesto-fabryc
 REDIS_URI=redis://localhost:6379/0
 
 # ── SonarCloud (optional) ─────────────────────────────────────────
-SONARCLOUD_TOKEN=                     # sonarcloud.io → My Account → Security
+SONARCLOUD_TOKEN=
 SONARCLOUD_ORG=bigonil
 
-# ── Object Storage (optional — required for "Object Storage" tab) ─
-STORAGE_BACKEND=disabled              # change to "minio" to enable MinIO
+# ── Object Storage (optional) ─────────────────────────────────────
+STORAGE_BACKEND=disabled              # "minio" to enable MinIO tab
 MINIO_ENDPOINT=http://localhost:9005
 MINIO_PUBLIC_ENDPOINT=http://localhost:9005
 MINIO_ACCESS_KEY=efesto
 MINIO_SECRET_KEY=changeme_local_minio
 MINIO_BUCKET=efesto-artifacts
 
-# ── Token pricing (optional — defaults match Claude Opus 4.6) ─────
+# ── Token pricing ─────────────────────────────────────────────────
 CLAUDE_INPUT_PRICE_PER_1M_USD=15.0
 CLAUDE_OUTPUT_PRICE_PER_1M_USD=75.0
 EUR_USD_RATE=0.92
@@ -289,61 +337,33 @@ APP_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 docker compose -f compose.local.yml up -d
 ```
 
-Wait for all services to be **healthy**:
+Wait for all services to be healthy:
 
 ```bash
 docker compose -f compose.local.yml ps
 ```
-
-Expected output:
-
-```
-NAME                              STATUS
-efesto-fabryc-local-mongodb-1     Up (healthy)
-efesto-fabryc-local-redis-1       Up (healthy)
-efesto-fabryc-local-minio-1       Up (healthy)
-```
-
-> **MinIO** is optional for basic mode. To activate:
-> 1. Set `STORAGE_BACKEND=minio` in `.env`
-> 2. The backend creates the bucket `efesto-artifacts` automatically on first use
-> 3. Web console available at [http://localhost:9006](http://localhost:9006)  
->    Username: `efesto` / Password: value of `MINIO_SECRET_KEY`
 
 ---
 
 ## Step 4 — Install Python dependencies and start the backend
 
 ```bash
-# Create and activate virtual environment
 python -m venv .venv
 
 # Windows
 .venv\Scripts\activate
-
 # macOS / Linux
 source .venv/bin/activate
 
-# Install dependencies
 pip install -e .
-
-# Start backend with hot reload
 uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Verify: open [http://localhost:8000/health](http://localhost:8000/health)
-
-```json
-{ "status": "healthy", "version": "1.0.0" }
-```
-
-Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+Verify: [http://localhost:8000/health](http://localhost:8000/health)
 
 ---
 
 ## Step 5 — Start the frontend
-
-Open a new terminal (keep the backend running):
 
 ```bash
 cd client
@@ -358,68 +378,159 @@ Open [http://localhost:5173](http://localhost:5173)
 ## Step 6 — Using the application
 
 1. **Home** → click **Start Analysis**
-2. **Section 1 — Project Information**: enter project name, source cloud, monthly cost
-3. **Section 2 — Analysis Scope**: select agents (MVP: Code Analyzer + Infra Analyzer active)
-4. **Section 3 — Artifact Source**: choose how to provide code:
+2. **Section 1 — Project Information**: project name, source cloud, monthly cost
+3. **Section 2 — Analysis Scope**: default is **All Agents** (all 7 run + MCP Enrichment if active)
+4. **Section 3 — Artifact Source**: choose how to provide code
 
    | Scenario | Tab |
    |---|---|
-   | Files on your PC | **File Upload** → drag & drop or "Add Folder" |
-   | Large files / production parity | **Object Storage** → uploaded directly to MinIO |
-   | Code in a Docker-mounted folder | **Local Volume** → specify paths relative to `/app/uploads` |
-   | Code on GitHub | **GitHub** → repo URL + branch + PAT (optional for public repos) |
-   | Code on Azure DevOps | **Azure DevOps** → Org URL + Project + Repo + PAT (scope: Code read) |
+   | Files on your PC | **File Upload** → drag & drop |
+   | Large files | **Object Storage** → direct upload to MinIO |
+   | Docker-mounted folder | **Local Volume** → paths relative to `/app/uploads` |
+   | Code on GitHub | **GitHub** → repo URL + branch + optional PAT |
+   | Code on Azure DevOps | **Azure DevOps** → Org URL + Project + Repo + PAT |
 
-   **Persist to volume toggle** (File Upload tab): saves a copy to `/app/uploads` for reuse
-   in the Local Volume tab without re-uploading.
+5. **Section 4 — MCP Enrichment Sources** (Beta):
+   - Toggle **Azure MCP** and/or **Azure DevOps MCP** — no URL needed (managed server-side)
+   - Click **View skills ▼** to see all available Azure Skills per server
+   - Custom AWS/GCP servers require a URL endpoint
 
-5. **Section 4 — MCP Enrichment Sources** (Beta): toggle MCP servers per cloud.
-   For URL-type servers, enter the HTTP/SSE endpoint. Enabled URL servers are
-   injected into every Anthropic API call via the MCP client beta.
-
-6. Click **Start Analysis** — the backend processes in the background.
-7. The report page polls automatically every 3 seconds until complete.
+6. Click **Start Analysis** — analysis runs in the background, page polls every 3s.
 
 ### Report page outputs
 
-| Section | What you see |
+| Section | Content |
 |---|---|
-| Agent Status Bar | Each agent's status, duration, and token usage (hover for details) |
-| **Token & Cost Panel** | Total tokens in/out, EUR cost, remaining budget bar, per-agent breakdown |
-| Executive Summary | C-level summary with EUR monetary values |
-| Strategy / Timeline / Savings | Recommended 6R strategy, migration weeks, monthly savings |
+| Agent Status Bar | Each agent status, duration, token usage |
+| **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown |
+| **Azure MCP Enrichment** | Skills called, migration readiness, real pricing, Advisor recs, WAF scores, reference architectures |
+| Executive Summary | C-level summary with EUR values |
+| Strategy / Timeline / Savings | 6R strategy, weeks, monthly savings |
 | Key Findings & Risks | Agent-derived findings and critical risks |
-| Recommended Actions | Top 10 prioritized actions with owner, timeline, effort, impact |
-| Migration Roadmap | Phase-by-phase roadmap with objectives and milestones |
-| **Migration Effort Detail** | Person-days, hours, team allocation (roles + EUR rates), wave breakdown, component complexity |
+| Recommended Actions | Top 10 actions with owner, timeline, effort, impact |
+| Migration Roadmap | Phase-by-phase with objectives and milestones |
+| **Migration Effort Detail** | Person-days, hours, team allocation (roles + EUR rates), wave breakdown |
 | SonarCloud Analysis | Quality gate, ratings (A–E), metrics, top issues |
 
 ---
 
-## Using the Local Volume (/app/uploads)
+## Step 7 — Enable Azure MCP Services (optional)
 
-To analyze code without uploading, copy files into the folder that Docker mounts as a volume:
+The Azure MCP servers run as separate Docker containers started with the `mcp` profile.
+
+### 7a — Create an Azure Service Principal
 
 ```bash
-# Find the physical path of the Docker volume
-docker volume inspect efesto-fabryc-local_efesto_uploads
+# Login to Azure CLI
+az login
 
-# Or copy directly into a running container
-docker cp ./my-project/src efesto-fabryc-local-api-1:/app/uploads/my-project/code
-docker cp ./my-project/infra efesto-fabryc-local-api-1:/app/uploads/my-project/iac
+# Create Service Principal with Reader role on your subscription
+az ad sp create-for-rbac \
+  --name "efesto-mcp-server" \
+  --role "Reader" \
+  --scopes /subscriptions/<SUBSCRIPTION_ID>
 ```
 
-Then in the form → **Local Volume** tab:
-- Code folder: `my-project/code`
-- IaC folder: `my-project/iac`
+Output — copy these values into `.env`:
+
+```json
+{
+  "appId":       "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",   ← AZURE_CLIENT_ID
+  "password":    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ← AZURE_CLIENT_SECRET
+  "tenant":      "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"    ← AZURE_TENANT_ID
+}
+```
+
+Get the subscription ID:
+```bash
+az account show --query id -o tsv    # ← AZURE_SUBSCRIPTION_ID
+```
+
+Verify the Service Principal works:
+```bash
+az login --service-principal \
+  --tenant $AZURE_TENANT_ID \
+  --username $AZURE_CLIENT_ID \
+  --password $AZURE_CLIENT_SECRET
+
+az account set --subscription $AZURE_SUBSCRIPTION_ID
+az resource list --output table     # should list resources
+```
+
+**Required RBAC roles:**
+
+| Role | Scope | Purpose |
+|---|---|---|
+| `Reader` | Subscription | Read resources, advisor, health |
+| `Cost Management Reader` | Subscription | Pricing and cost data |
+
+For Azure Migrate write capabilities (assessment creation): add `Contributor` on the Azure Migrate resource group.
+
+### 7b — Add MCP variables to `.env`
+
+```env
+# ── Azure Identity (for mcp-azure container) ──────────────────────
+AZURE_TENANT_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+AZURE_CLIENT_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+AZURE_CLIENT_SECRET="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+AZURE_SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# ── Azure MCP server (internal Docker URL — do not change) ─────────
+AZURE_MCP_SERVER_URL="http://mcp-azure:3333/sse"
+AZURE_MCP_SERVER_ENABLED=true         # ← set to true to enable
+
+# ── Azure DevOps MCP server ────────────────────────────────────────
+AZURE_DEVOPS_ORG="mycompany"          # your Azure DevOps organization name
+AZURE_DEVOPS_EXT_PAT="xxxxxxxxx"      # PAT with: Code(Read), Work Items(Read), Build(Read)
+AZURE_DEVOPS_MCP_SERVER_URL="http://mcp-devops:3334/sse"
+AZURE_DEVOPS_MCP_SERVER_ENABLED=true  # ← set to true to enable
+```
+
+**How to create a DevOps PAT:**
+1. Go to `https://dev.azure.com/{org}` → User Settings → Personal Access Tokens
+2. New Token → Scopes: `Code (Read)`, `Work Items (Read)`, `Build (Read)`, `Wiki (Read)`
+3. Copy the token into `AZURE_DEVOPS_EXT_PAT`
+
+### 7c — Start MCP containers
+
+```bash
+# Start only the MCP services
+docker compose --profile mcp up -d mcp-azure mcp-devops
+
+# Or start the full stack including MCP
+docker compose --profile mcp up -d
+
+# Check status
+docker compose ps
+
+# View Azure MCP server logs
+docker compose logs -f mcp-azure
+docker compose logs -f mcp-devops
+```
+
+The containers expose SSE endpoints on the Docker-internal network:
+- Azure MCP: `http://mcp-azure:3333/sse`
+- Azure DevOps MCP: `http://mcp-devops:3334/sse`
+
+These URLs are pre-configured in the backend via `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` — the frontend only sends the enable/disable toggle.
+
+### 7d — Run an analysis with MCP enrichment
+
+1. In the Analysis form → **Section 4 — MCP Enrichment Sources**
+2. Toggle **Azure MCP** and/or **Azure DevOps MCP** to ON
+3. Start the analysis
+4. The report will include an **Azure MCP Enrichment** panel with real Azure data
 
 ---
 
 ## Run the full stack in Docker (production-like local)
 
 ```bash
-# Build and start all services (API + client + MongoDB + Redis + MinIO)
+# Full stack without MCP services
 docker compose up --build -d
+
+# Full stack with MCP services
+docker compose --profile mcp up --build -d
 
 # Check status
 docker compose ps
@@ -428,7 +539,7 @@ docker compose ps
 docker compose logs -f api
 ```
 
-The client is served at [http://localhost:3000](http://localhost:3000) (nginx).
+The client is served at [http://localhost:3000](http://localhost:3000).
 The API is at [http://localhost:8000](http://localhost:8000).
 
 ---
@@ -439,9 +550,8 @@ The API is at [http://localhost:8000](http://localhost:8000).
 
 - Azure CLI installed and authenticated: `az login`
 - Subscription with quota for Azure OpenAI GPT-4o
-- Azure AI Foundry Hub (optional, for `use_foundry_mode=true`)
 - Azure Container Registry (ACR) for Docker images
-- SonarCloud account (optional)
+- Azure AI Foundry Hub (optional, for `use_foundry_mode=true`)
 
 ---
 
@@ -450,8 +560,6 @@ The API is at [http://localhost:8000](http://localhost:8000).
 ```bash
 az login
 az account set --subscription "<subscription-id>"
-
-# Verify active subscription
 az account show --query "{name:name, id:id}" -o table
 ```
 
@@ -460,48 +568,38 @@ az account show --query "{name:name, id:id}" -o table
 ## Step 2 — Deploy infrastructure with Bicep
 
 ```bash
-# Deploy for dev environment
 az deployment sub create \
   --name "efesto-dev-$(date +%Y%m%d)" \
   --location westeurope \
   --template-file infra/main.bicep \
   --parameters infra/parameters/dev.bicepparam \
   --parameters prefix=afaf environmentName=dev
-
-# Verify the resource group
-az group show --name rg-afaf-dev --query "{name:name, location:location}" -o table
 ```
 
-Resources created by Bicep:
+Resources created:
 
-| Resource | Name (pattern) | Purpose |
+| Resource | Pattern | Purpose |
 |---|---|---|
 | Container Apps Environment | `cae-afaf-dev` | Hosting backend + frontend |
 | Container App (API) | `ca-api-afaf-dev` | FastAPI backend |
 | Container App (Client) | `ca-client-afaf-dev` | React frontend |
-| Cosmos DB (MongoDB API) | `cosmos-afaf-dev` | State store (sessions + reports) |
+| Cosmos DB (MongoDB API) | `cosmos-afaf-dev` | State store |
 | Azure OpenAI | `oai-afaf-dev` | LLM (GPT-4o) |
 | AI Search | `srch-afaf-dev` | Knowledge base CAF/WAF |
 | Key Vault | `kv-afaf-dev` | Secrets management |
 | Log Analytics | `log-afaf-dev` | Observability |
-| Virtual Network | `vnet-afaf-dev` | Private endpoints |
 
 ---
 
 ## Step 3 — Build and push Docker images
 
 ```bash
-# Get ACR name from deploy output
 ACR_NAME=$(az acr list --resource-group rg-afaf-dev --query "[0].name" -o tsv)
-
-# Login to ACR
 az acr login --name $ACR_NAME
 
-# Build and push backend
 docker build -t $ACR_NAME.azurecr.io/efesto-api:latest -f docker/Dockerfile.api .
 docker push $ACR_NAME.azurecr.io/efesto-api:latest
 
-# Build and push frontend
 docker build -t $ACR_NAME.azurecr.io/efesto-client:latest -f docker/Dockerfile.client .
 docker push $ACR_NAME.azurecr.io/efesto-client:latest
 ```
@@ -515,12 +613,6 @@ chmod +x scripts/setup-rbac.sh
 ./scripts/setup-rbac.sh dev
 ```
 
-The script assigns:
-- `Cognitive Services OpenAI User` → Container App can call Azure OpenAI
-- `Search Index Data Reader` → Container App can read AI Search indexes
-- `Key Vault Secrets User` → Container App can read secrets from Key Vault
-- `Storage Blob Data Contributor` → Container App can read/write Azure Blob Storage
-
 ---
 
 ## Step 5 — Configure secrets in Key Vault
@@ -528,47 +620,23 @@ The script assigns:
 ```bash
 KV_NAME="kv-afaf-dev"
 
-# Anthropic (if using anthropic mode in Azure)
-az keyvault secret set --vault-name $KV_NAME \
-  --name "anthropic-api-key" --value "sk-ant-..."
-
-# SonarCloud
-az keyvault secret set --vault-name $KV_NAME \
-  --name "sonarcloud-token" --value "<token>"
-
-# MongoDB (if not using native Cosmos DB API)
-az keyvault secret set --vault-name $KV_NAME \
-  --name "mongodb-uri" --value "<connection-string>"
+az keyvault secret set --vault-name $KV_NAME --name "anthropic-api-key" --value "sk-ant-..."
+az keyvault secret set --vault-name $KV_NAME --name "sonarcloud-token" --value "<token>"
+az keyvault secret set --vault-name $KV_NAME --name "azure-mcp-client-secret" --value "<SP-secret>"
 ```
 
 ---
 
-## Step 6 — Configure Azure Blob Storage (replaces MinIO)
+## Step 6 — Configure Azure Blob Storage
 
 ```bash
-# Create storage account (if not already created by Bicep)
 az storage account create \
   --name "stafaf${ENV}" \
   --resource-group rg-afaf-dev \
   --location westeurope \
   --sku Standard_LRS \
   --allow-blob-public-access false
-
-# Assign Storage Blob Data Contributor to the Container App identity
-STORAGE_ID=$(az storage account show \
-  --name "stafafdev" -g rg-afaf-dev --query "id" -o tsv)
-
-CA_PRINCIPAL=$(az containerapp show \
-  --name ca-api-afaf-dev -g rg-afaf-dev \
-  --query "identity.principalId" -o tsv)
-
-az role assignment create \
-  --assignee $CA_PRINCIPAL \
-  --role "Storage Blob Data Contributor" \
-  --scope $STORAGE_ID
 ```
-
-With Managed Identity active, no connection string is needed:
 
 ```env
 STORAGE_BACKEND=azure
@@ -579,10 +647,9 @@ AZURE_STORAGE_CONTAINER=efesto-artifacts
 
 ---
 
-## Step 7 — Deploy updated images to Container Apps
+## Step 7 — Deploy to Container Apps
 
 ```bash
-# Update backend with production env vars
 az containerapp update \
   --name ca-api-afaf-dev \
   --resource-group rg-afaf-dev \
@@ -593,16 +660,14 @@ az containerapp update \
     STORAGE_BACKEND=azure \
     AZURE_STORAGE_ACCOUNT_NAME="stafafdev" \
     AZURE_STORAGE_CONTAINER="efesto-artifacts" \
+    AZURE_MCP_SERVER_URL="http://mcp-azure:3333/sse" \
+    AZURE_MCP_SERVER_ENABLED=true \
+    AZURE_TENANT_ID="..." \
+    AZURE_CLIENT_ID="..." \
     CLAUDE_INPUT_PRICE_PER_1M_USD=15.0 \
     CLAUDE_OUTPUT_PRICE_PER_1M_USD=75.0 \
     EUR_USD_RATE=0.92 \
     MONTHLY_BUDGET_EUR=100.0
-
-# Update frontend
-az containerapp update \
-  --name ca-client-afaf-dev \
-  --resource-group rg-afaf-dev \
-  --image $ACR_NAME.azurecr.io/efesto-client:latest
 ```
 
 ---
@@ -610,13 +675,11 @@ az containerapp update \
 ## Step 8 — Verify the deployment
 
 ```bash
-# Get frontend URL
 az containerapp show \
   --name ca-client-afaf-dev \
   --resource-group rg-afaf-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv
 
-# Backend health check
 curl https://$(az containerapp show \
   --name ca-api-afaf-dev -g rg-afaf-dev \
   --query "properties.configuration.ingress.fqdn" -o tsv)/health
@@ -624,20 +687,17 @@ curl https://$(az containerapp show \
 
 ---
 
-## Local → Production migration — key variables
+## Local → Production — key variable mapping
 
 | Variable | Local | Production |
 |---|---|---|
 | `LLM_PROVIDER` | `anthropic` | `azure` |
 | `STORAGE_BACKEND` | `minio` | `azure` |
-| `MINIO_ENDPOINT` | `http://localhost:9005` | — |
-| `AZURE_STORAGE_ACCOUNT_NAME` | — | `<account name>` |
-| `AZURE_STORAGE_CONNECTION_STRING` | — | empty → Managed Identity |
 | `MONGODB_URI` | `mongodb://admin:...@localhost:27017` | Cosmos DB connection string |
 | `REDIS_URI` | `redis://localhost:6379/0` | Azure Cache for Redis URI |
 | `APP_ENV` | `development` | `production` |
-| `CLAUDE_INPUT_PRICE_PER_1M_USD` | `15.0` | `15.0` (update if pricing changes) |
-| `MONTHLY_BUDGET_EUR` | `100.0` | set per team/project budget |
+| `AZURE_MCP_SERVER_URL` | `http://mcp-azure:3333/sse` | Internal Container App URL |
+| `AZURE_DEVOPS_MCP_SERVER_URL` | `http://mcp-devops:3334/sse` | Internal Container App URL |
 
 ---
 
@@ -645,25 +705,25 @@ curl https://$(az containerapp show \
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/analysis/start` | Start async analysis (checks Redis cache first) |
-| `GET` | `/api/analysis/{id}/status` | Poll status: `running` / `completed` / `failed` |
-| `GET` | `/api/analysis/{id}` | Full report (200 when completed) — includes token totals |
+| `POST` | `/api/analysis/start` | Start async analysis (Redis cache checked first) |
+| `GET` | `/api/analysis/{id}/status` | Poll: `running` / `completed` / `failed` |
+| `GET` | `/api/analysis/{id}` | Full report with token totals |
 | `GET` | `/api/analysis/` | List all sessions |
-| `POST` | `/api/analysis/quick-scan` | Synchronous analysis (small projects, 120s timeout) |
-| `POST` | `/api/artifacts/presign` | Presigned PUT URL for direct browser upload to MinIO/Blob |
-| `POST` | `/api/artifacts/upload-to-volume` | Upload files to Docker volume `/app/uploads` |
-| `DELETE` | `/api/artifacts/{key}` | Delete an artifact from storage |
-| `GET` | `/api/artifacts/volume-tree` | List files in the volume |
+| `POST` | `/api/analysis/quick-scan` | Synchronous (small projects, 120s timeout) |
+| `POST` | `/api/artifacts/presign` | Presigned PUT URL for MinIO/Blob upload |
+| `POST` | `/api/artifacts/upload-to-volume` | Upload to Docker volume `/app/uploads` |
+| `DELETE` | `/api/artifacts/{key}` | Delete from storage |
+| `GET` | `/api/artifacts/volume-tree` | List volume files |
 | `GET` | `/health` | Health check |
 
-### Analysis request — full example with MCP servers
+### Analysis request — full example
 
 ```json
 {
   "project_name": "my-api",
   "source_cloud": "aws",
   "target_cloud": "azure",
-  "analysis_types": ["code_analyzer", "infra_analyzer"],
+  "analysis_types": ["all"],
   "current_monthly_cost_usd": 5000,
   "additional_context": "Microservices on ECS, PostgreSQL RDS, target Azure PaaS",
   "source_config": {
@@ -675,11 +735,28 @@ curl https://$(az containerapp show \
     "iac_folder": "infra"
   },
   "mcp_servers": [
-    { "id": "azure-mcp", "name": "Azure MCP", "type": "url", "url": "https://my-azure-mcp.example.com/sse", "enabled": true, "cloud": "azure" }
+    {
+      "id": "azure-mcp-internal",
+      "name": "Azure MCP",
+      "type": "url",
+      "enabled": true,
+      "cloud": "azure",
+      "preconfigured": true
+    },
+    {
+      "id": "azure-devops-mcp-internal",
+      "name": "Azure DevOps MCP",
+      "type": "url",
+      "enabled": true,
+      "cloud": "devops",
+      "preconfigured": true
+    }
   ],
   "use_foundry_mode": false
 }
 ```
+
+> **Pre-configured servers**: when `preconfigured: true`, the URL is injected server-side from `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL`. The client sends only the toggle.
 
 ### Analysis response — token fields
 
@@ -688,78 +765,17 @@ curl https://$(az containerapp show \
   "session_id": "uuid",
   "project_name": "my-api",
   "status": "completed",
-  "synthesis": { ... },
+  "synthesis": { "maturity_score": 3.2, "recommended_strategy": "replatform", "..." : "..." },
   "agent_results": {
-    "code_analyzer": {
-      "agent_name": "code_analyzer",
-      "status": "success",
-      "duration_seconds": 12.3,
-      "input_tokens": 8200,
-      "output_tokens": 1450,
-      "cost_eur": 0.0225
-    }
+    "code_analyzer":   { "status": "success", "input_tokens": 8200, "output_tokens": 1450, "cost_eur": 0.0225 },
+    "infra_analyzer":  { "status": "success", "input_tokens": 6100, "output_tokens": 980,  "cost_eur": 0.0165 },
+    "mcp_enrichment":  { "status": "success", "input_tokens": 12400, "output_tokens": 2100, "cost_eur": 0.0345 },
+    "cost_optimizer":  { "status": "success", "input_tokens": 9800, "output_tokens": 1600, "cost_eur": 0.0267 }
   },
-  "total_input_tokens": 18400,
-  "total_output_tokens": 3200,
-  "total_cost_eur": 0.049,
+  "total_input_tokens": 48200,
+  "total_output_tokens": 8300,
+  "total_cost_eur": 0.142,
   "created_at": 1712345678.0
-}
-```
-
-### Source config — all types
-
-**File Upload (default):**
-```json
-{ "code_artifacts": [{"filename": "app.py", "content": "..."}], "iac_artifacts": [...] }
-```
-
-**Object Storage (MinIO / Azure Blob):**
-```json
-{
-  "source_config": {
-    "type": "blob",
-    "artifacts": [
-      { "key": "uploads/code/abc123/app.py", "filename": "app.py", "artifact_type": "code" },
-      { "key": "uploads/iac/def456/main.tf", "filename": "main.tf", "artifact_type": "iac" }
-    ]
-  }
-}
-```
-
-**Local Volume:**
-```json
-{
-  "source_config": { "type": "volume", "code_folder": "myproject/src", "iac_folder": "myproject/infra" }
-}
-```
-
-**GitHub:**
-```json
-{
-  "source_config": {
-    "type": "github",
-    "repo_url": "https://github.com/org/repo",
-    "branch": "main",
-    "token": "ghp_...",
-    "code_folder": "src",
-    "iac_folder": "infra"
-  }
-}
-```
-
-**Azure DevOps:**
-```json
-{
-  "source_config": {
-    "type": "devops",
-    "org_url": "https://dev.azure.com/myorg",
-    "project": "MyProject",
-    "repo": "my-repo",
-    "branch": "main",
-    "token": "<PAT>",
-    "code_folder": "src",
-    "iac_folder": "infra"
-  }
 }
 ```
 
@@ -767,38 +783,27 @@ curl https://$(az containerapp show \
 
 # SonarCloud Integration
 
-The `code_analyzer` automatically queries SonarCloud before calling Claude.
-
-**What is fetched:**
-- Quality Gate status (OK / ERROR)
-- Metrics: bugs, vulnerabilities, security hotspots, code smells, coverage %, duplication %, technical debt, LOC
-- Ratings: Reliability, Security, Maintainability (A–E)
-- Top open issues (BLOCKER / CRITICAL)
-
-**Configuration:**
 ```env
 SONARCLOUD_TOKEN=<user-token>   # sonarcloud.io → My Account → Security → Generate Token
-SONARCLOUD_ORG=bigonil          # Organization key (visible in Org Settings → Key)
+SONARCLOUD_ORG=bigonil          # Organization key (Org Settings → Key)
 ```
 
-The project must have been scanned at least once via `sonar-scanner` or a CI/CD pipeline.
+The `code_analyzer` fetches before calling Claude: Quality Gate, bugs, vulnerabilities, hotspots, smells, coverage, duplication, technical debt, LOC, ratings (A–E), top issues.
 
 ---
 
 # Redis Cache — Two Levels
 
-| Level | Cache key | TTL | Effect |
+| Level | Key | TTL | Effect |
 |---|---|---|---|
-| **Report** | SHA-256 of the full request | 24h | Identical request → immediate response, 0 Claude calls |
-| **Per-agent** | SHA-256 of agent-specific inputs | 48h | Reuses agent result across different analyses |
+| **Report** | SHA-256 of full request | 24h | Identical request → immediate response, 0 Claude calls |
+| **Per-agent** | SHA-256 of agent inputs | 48h | Reuses agent result across different analyses |
 
-Redis degrades gracefully — if unavailable, analysis proceeds normally without caching.
+Token counts are restored from cache for all agents (Phase 1 and Phase 2) so the Per-Agent Breakdown always shows accurate token data even on cached runs.
 
 ---
 
 # Migration Effort Formula
-
-The `migration_planner` agent computes effort using this formula for each component:
 
 ```
 final_days = base_days × strategy_factor × risk_multiplier
@@ -806,11 +811,11 @@ final_days = base_days × strategy_factor × risk_multiplier
 
 | Strategy | Factor | Risk | Multiplier |
 |---|---|---|---|
-| Rehost (Lift & Shift) | × 1.0 | Low | × 1.0 |
-| Replatform (Lift & Reshape) | × 1.5 | Medium | × 1.3 |
-| Refactor / Re-architect | × 3.0 | High | × 1.6 |
+| Rehost | × 1.0 | Low | × 1.0 |
+| Replatform | × 1.5 | Medium | × 1.3 |
+| Refactor | × 3.0 | High | × 1.6 |
 
-**Base days per component type:**
+**Base days per component:**
 
 | Component | Base days |
 |---|---|
@@ -824,7 +829,7 @@ final_days = base_days × strategy_factor × risk_multiplier
 | CI/CD pipeline | 3 d / pipeline |
 | Testing & validation | +20% of total |
 
-**Standard role daily rates (EUR):**
+**Standard daily rates (EUR):**
 
 | Role | Rate/day |
 |---|---|
@@ -843,8 +848,8 @@ final_days = base_days × strategy_factor × risk_multiplier
 
 | Pillar | Implementation |
 |---|---|
-| **Reliability** | Health probe, retry logic in agents, graceful degradation (Redis, SonarCloud) |
-| **Security** | Managed Identity (prod), Key Vault, Private Endpoint (prod), no secrets in code |
-| **Cost Optimization** | Redis cache (avoids redundant Claude calls), scale-to-0 Container Apps, all costs in EUR, token tracking with budget bar |
-| **Operational Excellence** | IaC Bicep, structured logging, `/health` endpoint, async job pattern |
-| **Performance** | Parallel agent execution (asyncio), two-level Redis cache, SonarCloud pre-fetch, MCP enrichment optional |
+| **Reliability** | Health probe, retry logic, graceful degradation (Redis, SonarCloud, MCP) |
+| **Security** | Managed Identity (prod), Key Vault, no secrets in code, Service Principal for MCP |
+| **Cost Optimization** | Redis cache (avoids redundant Claude calls), token tracking with budget bar, real Azure pricing via MCP |
+| **Operational Excellence** | IaC Bicep, structured logging, `/health` endpoint, async job pattern, Docker profiles for optional services |
+| **Performance** | Parallel agent execution (asyncio), two-level Redis cache, Phase 1.5 MCP enrichment optional and non-blocking |
