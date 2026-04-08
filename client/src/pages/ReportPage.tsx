@@ -210,6 +210,12 @@ export default function ReportPage() {
           <div className="text-right">
             <div className="text-3xl font-bold text-white">{maturityScore.toFixed(1)}<span className="text-gray-500 text-lg">/5</span></div>
             <div className="text-xs text-gray-500 mt-1">Maturity Score</div>
+            <div
+              className="text-xs text-gray-600 mt-1 max-w-[220px] text-right leading-snug"
+              title="Calcolato da Claude su: qualità del codice (SonarCloud + analisi statica), grado di coupling con il cloud provider corrente, e complessità dell'infrastruttura. 1 = legacy/alto rischio · 5 = cloud-native/pronto alla migrazione"
+            >
+              Basato su qualità codice, coupling e complessità infra
+            </div>
           </div>
         </div>
       </div>
