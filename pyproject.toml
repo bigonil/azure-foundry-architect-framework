@@ -34,6 +34,8 @@ dependencies = [
     "jsonschema>=4.23.0",
     # ── Reporting ─────────────────────────────────────────────────────────────
     "jinja2>=3.1.4",
+    # ── MCP (local SSE client for Docker-hosted MCP servers) ─────────────────
+    "mcp[cli]>=1.0.0",
     # ── Object Storage ────────────────────────────────────────────────────────
     # boto3: MinIO (S3-compatible) — local development
     # azure-storage-blob: Azure Blob Storage — production
