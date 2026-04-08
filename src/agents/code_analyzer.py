@@ -35,7 +35,12 @@ class CodeAnalyzerAgent(BaseAgent):
 
     # ── Override run() to add SonarCloud enrichment ────────────────────────────
 
-    async def run(self, context: dict[str, Any], session_id: str | None = None):
+    async def run(
+        self,
+        context: dict[str, Any],
+        session_id: str | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ):
         """Fetch SonarCloud data, run Claude analysis, merge results."""
         project_name = context.get("project_name", "")
         sonar_data = await self._fetch_sonarcloud(project_name)
@@ -44,7 +49,7 @@ class CodeAnalyzerAgent(BaseAgent):
         enriched_context = {**context, "_sonarcloud": sonar_data}
 
         # Run the normal Claude analysis pipeline
-        result = await super().run(enriched_context, session_id)
+        result = await super().run(enriched_context, session_id, mcp_servers=mcp_servers)
 
         # Attach SonarCloud data regardless of Claude success/failure
         result.data["sonarqube_analysis"] = sonar_data
