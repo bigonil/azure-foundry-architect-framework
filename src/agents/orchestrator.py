@@ -157,6 +157,8 @@ Return the orchestration plan as JSON.
                     status=cached_data.get("status", "success"),
                     data=cached_data.get("data", {}),
                     duration_seconds=0.0,
+                    input_tokens=cached_data.get("input_tokens", 0),
+                    output_tokens=cached_data.get("output_tokens", 0),
                 )
             else:
                 agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)

@@ -124,7 +124,7 @@ export default function AnalysisPage() {
     project_name: '',
     source_cloud: 'aws',
     target_cloud: 'azure',
-    analysis_types: ['code_analyzer', 'infra_analyzer'],
+    analysis_types: ['all'],
     code_artifacts: [],
     iac_artifacts: [],
     additional_context: '',
