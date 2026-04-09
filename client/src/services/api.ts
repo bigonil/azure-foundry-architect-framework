@@ -132,6 +132,7 @@ export interface AnalysisReport {
       objectives: string[]
       key_milestones: string[]
     }>
+    effort_detail?: Record<string, unknown>
   }
   agent_results: Record<string, AgentResultSummary>
   created_at: number

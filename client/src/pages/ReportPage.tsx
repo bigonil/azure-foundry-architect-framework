@@ -8,7 +8,7 @@ import {
   BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
   Download, Printer, Loader2,
 } from 'lucide-react'
-import { analysisApi, type AnalysisReport } from '../services/api'
+import { analysisApi, type AnalysisReport, type SessionStatus } from '../services/api'
 
 const WAF_COLORS: Record<string, string> = {
   critical: 'text-red-400 bg-red-500/10 border-red-500/30',
@@ -96,7 +96,7 @@ export default function ReportPage() {
 
   // -- Error: analysis failed or network error ------------------------------
   if (isFailed || statusError || reportError) {
-    const detail = statusData?.error ?? (reportError as any)?.message ?? 'Unknown error'
+    const detail = (statusData as SessionStatus | undefined)?.error ?? (reportError as any)?.message ?? 'Unknown error'
     return (
       <div className="flex items-center gap-3 bg-red-900/20 border border-red-800 rounded-xl p-6">
         <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
@@ -398,7 +398,7 @@ export default function ReportPage() {
 
       {/* -- Migration Effort Detail --------------------------------------------- */}
       {synthesis.effort_detail && (
-        <EffortDetailSection effort={synthesis.effort_detail} />
+        <EffortDetailSection effort={synthesis.effort_detail as EffortDetail} />
       )}
 
       {/* -- SonarCloud Static Analysis ----------------------------------------- */}
@@ -765,7 +765,7 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
           </div>
 
           {/* Migration Blockers */}
-          {(readiness.blockers as string[] | undefined)?.length > 0 && (
+          {((readiness.blockers as string[] | undefined)?.length ?? 0) > 0 && (
             <div>
               <div className="text-[10px] text-red-400/80 uppercase tracking-wider font-semibold mb-1.5 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> Migration Blockers
@@ -781,7 +781,7 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
           )}
 
           {/* Recommendations */}
-          {(readiness.recommendations as string[] | undefined)?.length > 0 && (
+          {((readiness.recommendations as string[] | undefined)?.length ?? 0) > 0 && (
             <div>
               <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1.5">Recommendations</div>
               <ul className="space-y-1">
@@ -990,8 +990,8 @@ function SonarCloudSection({ data }: { data?: AnalysisReport['sonarqube_analysis
   }
 
   const m = data.measures ?? {}
-  const qg = data.quality_gate ?? {}
-  const qgOk = qg.status === 'OK'
+  const qg = data.quality_gate
+  const qgOk = qg?.status === 'OK'
   const issues = data.issues ?? []
 
   return (
@@ -1012,7 +1012,7 @@ function SonarCloudSection({ data }: { data?: AnalysisReport['sonarqube_analysis
               : 'bg-red-500/10 border-red-500/30 text-red-400'
           )}>
             {qgOk ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-            Quality Gate: {qg.status ?? 'UNKNOWN'}
+            Quality Gate: {qg?.status ?? 'UNKNOWN'}
           </div>
           {data.project_url && (
             <a
@@ -1082,7 +1082,7 @@ function SonarCloudSection({ data }: { data?: AnalysisReport['sonarqube_analysis
       </div>
 
       {/* Failing quality gate conditions */}
-      {qg.conditions && qg.conditions.length > 0 && (
+      {qg?.conditions && qg.conditions.length > 0 && (
         <div>
           <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Failing Conditions</div>
           <div className="space-y-1">
