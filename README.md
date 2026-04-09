@@ -237,7 +237,9 @@ The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK +
 | Wiki & Test | `wiki_list_wikis`, `wiki_get_page_content`, `testplan_list_test_plans` |
 | Search | `search_code`, `search_wiki` |
 
-> **Note on Azure DevOps Remote MCP**: The remote endpoint `https://mcp.dev.azure.com/{org}` requires Entra OAuth and currently does **not** support the Anthropic API MCP client. The Docker service uses the local **`@azure-devops/mcp`** package (v2.5.0+) authenticated via PAT (`--authentication env`). On corporate networks with SSL inspection, `NODE_TLS_REJECT_UNAUTHORIZED=0` is set in the container (replace with `NODE_EXTRA_CA_CERTS` + mounted CA cert for production).
+> **Note on Azure DevOps Remote MCP**: The remote endpoint `https://mcp.dev.azure.com/{org}` requires Entra OAuth and currently does **not** support the Anthropic API MCP client. The Docker service uses the local **`@azure-devops/mcp`** package (v2.5.0+) authenticated via PAT (`--authentication env`).
+> 
+> **Corporate SSL proxy**: `NODE_TLS_REJECT_UNAUTHORIZED=0` is set in the container. For production, the corporate CA bundle is mounted at `/usr/local/share/ca-certificates/corporate-ca-bundle.pem` and `NODE_EXTRA_CA_CERTS` is set **inline in the Dockerfile CMD** (not as a Docker env var) to prevent the host Windows path from leaking in via Docker Desktop / Git Bash.
 
 ### Detailed Migration Effort
 
@@ -550,7 +552,8 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | Phase 2 agents fail with 400/500 when MCP enabled | base_agent was passing MCP servers to Anthropic beta | Fixed — `base_agent` uses standard API; Phase 2 agents get MCP data via context |
 | Rate limit 429 in MCP loop | Claude Opus + many tool calls | Fixed — Haiku used for MCP loop; exits gracefully on 429 |
 | `unhandled errors in a TaskGroup` | `BaseExceptionGroup` not caught by `except Exception` | Fixed — `except BaseException` with re-raise for SystemExit |
-| DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Caught gracefully with 3-attempt retry; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG` |
+| DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Caught gracefully with 3-attempt retry; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG`. On corporate networks, mount the CA bundle and set `NODE_EXTRA_CA_CERTS` inline in the CMD (see Dockerfile.mcp-devops) |
+| `NODE_EXTRA_CA_CERTS` wrong path in container | Claude Code `settings.json` `env` leaks host Windows path via Docker Desktop / Git Bash (backslashes stripped) | Fixed — `NODE_EXTRA_CA_CERTS` set inline in Dockerfile CMD as `sh -c "NODE_EXTRA_CA_CERTS=<container-path> supergateway ..."` |
 | `infra_analyzer: Could not parse JSON response` | Large infra response truncated (max_tokens too small) OR Claude returned JSON array instead of object | Fixed — `max_tokens` raised to 8192; `parse_response` now normalises JSON arrays to objects |
 | `Server disconnected without sending a response` | SSE session dropped after uvicorn hot-reload | Fixed — SSE connect retried up to 3 times with 2s backoff before giving up |
 | `SONARCLOUD_TOKEN not set — skipping SonarCloud` | Settings `lru_cache` loaded before `.env` update | Restart the backend after editing `.env`. Both `SONARCLOUD_TOKEN` and `SONARCLOUD_ORG` must be set |
