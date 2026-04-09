@@ -9,7 +9,18 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd libicu-dev \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g supergateway@latest @azure/mcp@latest \
-    && npm cache clean --force
+    && npm cache clean --force \
+    && node -e " \
+        const fs = require('fs'); \
+        const f = '/usr/local/lib/node_modules/supergateway/dist/gateways/stdioToSse.js'; \
+        let c = fs.readFileSync(f, 'utf8'); \
+        c = c.replace( \
+            'await server.connect(sseTransport);', \
+            'try { await server.close(); } catch(_) {} try { server._transport = undefined; } catch(_) {} await server.connect(sseTransport);' \
+        ); \
+        fs.writeFileSync(f, c); \
+        console.log('Patched stdioToSse.js: close + reset _transport before connect'); \
+    "
 
 # Required for the .NET azmcp binary shipped inside @azure/mcp
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
@@ -33,7 +44,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 CMD ["sh", "-c", \
      "while true; do \
         supergateway \
-          --stdio 'npx -y @azure/mcp@latest server start' \
+          --stdio 'azmcp server start' \
           --port 3333 \
           --baseUrl http://mcp-azure:3333 \
         || true; \
