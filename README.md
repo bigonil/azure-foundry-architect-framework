@@ -158,7 +158,7 @@ azure-foundry-architect-framework/
 │   ├── Dockerfile.api
 │   ├── Dockerfile.client
 │   ├── Dockerfile.mcp-azure          # NEW — @azure/mcp via supergateway SSE
-│   ├── Dockerfile.mcp-devops         # NEW — @microsoft/azure-devops-mcp via supergateway SSE
+│   ├── Dockerfile.mcp-devops         # NEW — @azure-devops/mcp via supergateway SSE
 │   └── nginx.conf
 ├── infra/                            # Azure Bicep (production IaC)
 ├── scripts/
@@ -215,7 +215,7 @@ The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK +
 
 | Category | Skills |
 |---|---|
-| Migration | `azuremigrate`, `cloudarchitect`, `get_azure_bestpractices`, `azureterraformbestpractices` |
+| Migration | `azuremigrate` **(called first — most important)**, `cloudarchitect`, `get_azure_bestpractices`, `azureterraformbestpractices` |
 | WAF & Docs | `wellarchitectedframework`, `documentation`, `bicepschema` |
 | Pricing & Advisor | `pricing`, `advisor`, `quota`, `marketplace` |
 | Compute | `compute`, `aks`, `appservice`, `containerapps`, `functionapp`, `functions` |
@@ -409,7 +409,7 @@ Open [http://localhost:5173](http://localhost:5173)
 |---|---|
 | Agent Status Bar | Each agent status, duration, token usage |
 | **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown |
-| **Azure MCP Enrichment** | Skills called, migration readiness, real pricing, Advisor recs, WAF scores, reference architectures |
+| **Azure MCP Enrichment** | Skills called, **Azure Migrate assessment** (score + suitability + blockers), real pricing + breakdown, Advisor recs (all, with category/impact), WAF scores + findings, reference architectures (with fit scores), per-service SKU guidance, best practices |
 | Executive Summary | C-level summary with EUR values |
 | Strategy / Timeline / Savings | 6R strategy, weeks, monthly savings |
 | Key Findings & Risks | Agent-derived findings and critical risks |
@@ -548,6 +548,9 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | Phase 2 agents fail with 400/500 when MCP enabled | base_agent was passing MCP servers to Anthropic beta | Fixed — `base_agent` uses standard API; Phase 2 agents get MCP data via context |
 | Rate limit 429 in MCP loop | Claude Opus + many tool calls | Fixed — Haiku used for MCP loop; exits gracefully on 429 |
 | `unhandled errors in a TaskGroup` | `BaseExceptionGroup` not caught by `except Exception` | Fixed — `except BaseException` with re-raise for SystemExit |
+| DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Error caught gracefully; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG` are correct |
+| `infra_analyzer: Could not parse JSON response` | Large infra response truncated (max_tokens too small) | Fixed — `max_tokens` raised to 8192 in `infra_analyzer.yaml` |
+| `SONARCLOUD_TOKEN not set — skipping SonarCloud` | Settings `lru_cache` loaded before `.env` update | Restart the backend after editing `.env`. Both `SONARCLOUD_TOKEN` and `SONARCLOUD_ORG` must be set |
 
 ---
 
