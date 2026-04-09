@@ -149,9 +149,16 @@ class McpEnrichmentAgent(BaseAgent):
                 except BaseException as exc:
                     if isinstance(exc, (SystemExit, KeyboardInterrupt)):
                         raise
+                    # BaseExceptionGroup is raised by anyio TaskGroup when the SSE
+                    # connection closes abruptly (e.g. DevOps MCP auth failure during init)
+                    exc_msg = (
+                        "; ".join(str(e) for e in exc.exceptions)  # type: ignore[attr-defined]
+                        if hasattr(exc, "exceptions")
+                        else str(exc)
+                    )
                     logger.warning(
                         "[mcp_enrichment] Cannot reach '%s' (%s): %s — skipping",
-                        name, url, exc,
+                        name, url, exc_msg,
                     )
 
             if not named_sessions:
@@ -315,10 +322,12 @@ Enrich the following cloud migration analysis using ALL available Azure MCP tool
 {json.dumps(phase1_summary, indent=2)}
 
 ## Your Task
-Use the available tools to gather real Azure intelligence:
-1. Call **azuremigrate** (or equivalent) to get migration readiness for this workload
+Use the available tools to gather real Azure intelligence. CALL EVERY RELEVANT TOOL.
+
+**START HERE — call these tools FIRST in this exact order:**
+1. Call **azuremigrate** tool immediately — assess migration readiness, blockers, and suitability for Azure of this workload. This is the MOST IMPORTANT call.
 2. Call **pricing** to get actual Azure pricing for the target services identified above
-3. Call **advisor** to get Azure Advisor recommendations for the migration scenario
+3. Call **advisor** to get Azure Advisor recommendations for this migration scenario
 4. Call **wellarchitectedframework** to assess the proposed target architecture
 5. Call **cloudarchitect** to get matching reference architectures
 6. Call **get_azure_bestpractices** for the specific services and migration pattern
