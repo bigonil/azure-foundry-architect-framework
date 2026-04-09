@@ -8,7 +8,7 @@ import {
   BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
   Download, Printer, Loader2,
 } from 'lucide-react'
-import { analysisApi, type AnalysisReport, type SessionStatus } from '../services/api'
+import { analysisApi, type AnalysisReport, type SessionStatus, type McpEnrichmentData } from '../services/api'
 
 const WAF_COLORS: Record<string, string> = {
   critical: 'text-red-400 bg-red-500/10 border-red-500/30',
@@ -677,46 +677,52 @@ function MetricTile({ label, value, unit, color }: {
 // -- MCP Enrichment Panel ──────────────────────────────────────────────────────
 
 function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
-  const enrichment = (report.agent_results?.mcp_enrichment as any)
+  const enrichment = report.agent_results?.mcp_enrichment
   if (!enrichment || enrichment.status !== 'success') return null
 
-  const data = enrichment.data ?? {}
-  const readiness      = data.migration_readiness ?? {}
-  const azMigrateRaw   = (data.azure_migrate_raw ?? '') as string
-  const pricing        = data.azure_pricing_estimate ?? {}
-  const advisor        = (data.advisor_recommendations ?? []) as any[]
-  const waf            = data.waf_assessment ?? {}
-  const refArchs       = (data.reference_architectures ?? []) as any[]
-  const practices      = (data.best_practices ?? []) as string[]
-  const skillsCalled   = (data.azure_skills_called ?? []) as string[]
-  const quality        = data.enrichment_quality ?? 'unknown'
-  const svcGuidance    = data.service_guidance as Record<string, any> ?? {}
+  const data = (enrichment.data ?? {}) as McpEnrichmentData
+  const readiness    = data.migration_readiness ?? {}
+  const azMigrateRaw = data.azure_migrate_raw ?? ''
+  const svcMapArr    = data.aws_to_azure_service_mapping ?? []
+  const pricing      = data.azure_pricing_estimate ?? {}
+  const advisor      = data.advisor_recommendations ?? []
+  const waf          = data.waf_assessment ?? {}
+  const refArchs     = data.reference_architectures ?? []
+  const svcGuidance  = data.service_guidance ?? {}
+  const infraRecs    = data.infrastructure_recommendations ?? []
+  const migPath      = data.migration_path ?? {}
+  const practices    = data.best_practices ?? []
+  const skillsCalled = data.azure_skills_called ?? []
+  const quality      = data.enrichment_quality ?? 'unknown'
+  const notes        = data.enrichment_notes ?? ''
 
   const wafPillars = ['reliability', 'security', 'cost_optimization', 'operational_excellence', 'performance_efficiency']
   const wafColors: Record<number, string> = { 5: 'text-green-400', 4: 'text-blue-400', 3: 'text-yellow-400', 2: 'text-orange-400', 1: 'text-red-400' }
+  const priorityColors: Record<string, string> = { critical: 'text-red-400 bg-red-500/10', high: 'text-orange-400 bg-orange-500/10', medium: 'text-yellow-400 bg-yellow-500/10', low: 'text-green-400 bg-green-500/10' }
+  const complexityColors: Record<string, string> = { low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400' }
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-blue-800/40 p-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <div className="bg-gray-900 rounded-xl border border-blue-800/40 p-6 space-y-6">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Zap className="w-4 h-4 text-blue-400" />
           <span className="font-semibold text-white">Azure MCP Enrichment</span>
           <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
             Live Azure Data
           </span>
           <span className={clsx(
-            'text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider',
-            quality === 'high' ? 'text-green-400 bg-green-500/10 border border-green-500/30'
-              : quality === 'medium' ? 'text-yellow-400 bg-yellow-500/10 border border-yellow-500/30'
-              : 'text-gray-400 bg-gray-700'
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider border',
+            quality === 'high' ? 'text-green-400 bg-green-500/10 border-green-500/30'
+              : quality === 'medium' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+              : 'text-gray-400 bg-gray-700 border-gray-600'
           )}>
             Quality: {quality}
           </span>
+          {skillsCalled.length > 0 && (
+            <span className="text-[10px] text-gray-500">{skillsCalled.length} skills called</span>
+          )}
         </div>
-        {skillsCalled.length > 0 && (
-          <span className="text-xs text-gray-500">{skillsCalled.length} Azure Skills called</span>
-        )}
       </div>
 
       {/* Skills called badges */}
@@ -725,8 +731,10 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
           {skillsCalled.map((s) => (
             <span key={s} className={clsx(
               'text-[10px] px-1.5 py-0.5 rounded font-mono border',
-              s === 'azuremigrate' || s === 'azure__azuremigrate'
+              s.includes('azuremigrate')
                 ? 'text-orange-300 bg-orange-900/20 border-orange-700/40 font-bold'
+                : s.includes('pricing')
+                ? 'text-green-300 bg-green-900/20 border-green-800/30'
                 : 'text-blue-300/70 bg-blue-900/20 border-blue-800/30'
             )}>
               {s}
@@ -735,14 +743,18 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
         </div>
       )}
 
-      {/* ── Azure Migrate Assessment (prominent top section) ───────────────── */}
+      {notes && (
+        <div className="text-[11px] text-yellow-400/70 bg-yellow-900/10 border border-yellow-800/30 rounded px-3 py-2">{notes}</div>
+      )}
+
+      {/* ── 1. Azure Migrate Assessment ────────────────────────────────────── */}
       {(readiness.overall_score != null || readiness.suitability || (readiness.blockers?.length ?? 0) > 0 || azMigrateRaw) && (
         <div className="bg-blue-950/30 border border-blue-700/40 rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-blue-400" />
-            <span className="text-xs text-blue-300 uppercase tracking-wider font-semibold">Azure Migrate — Migration Assessment</span>
+            <span className="text-xs text-blue-300 uppercase tracking-wider font-semibold">Azure Migrate — Migration Readiness</span>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-6 flex-wrap">
             {readiness.overall_score != null && (
               <div>
                 <div className="text-[10px] text-gray-500 mb-0.5">Readiness Score</div>
@@ -752,26 +764,29 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
             {readiness.suitability && (
               <div>
                 <div className="text-[10px] text-gray-500 mb-0.5">Cloud Suitability</div>
-                <div className={clsx(
-                  'text-sm font-semibold px-3 py-1 rounded-full',
-                  readiness.suitability === 'cloud' ? 'text-green-300 bg-green-500/15 border border-green-500/30'
-                    : readiness.suitability === 'conditional' ? 'text-yellow-300 bg-yellow-500/15 border border-yellow-500/30'
-                    : 'text-red-300 bg-red-500/15 border border-red-500/30'
+                <div className={clsx('text-sm font-semibold px-3 py-1 rounded-full border',
+                  readiness.suitability === 'cloud' ? 'text-green-300 bg-green-500/15 border-green-500/30'
+                    : readiness.suitability.includes('conditional') ? 'text-yellow-300 bg-yellow-500/15 border-yellow-500/30'
+                    : 'text-red-300 bg-red-500/15 border-red-500/30'
                 )}>
                   {readiness.suitability}
                 </div>
               </div>
             )}
+            {readiness.estimated_migration_effort_weeks != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Estimated Effort</div>
+                <div className="text-lg font-bold text-blue-300">{readiness.estimated_migration_effort_weeks}w</div>
+              </div>
+            )}
           </div>
-
-          {/* Migration Blockers */}
-          {((readiness.blockers as string[] | undefined)?.length ?? 0) > 0 && (
+          {(readiness.blockers?.length ?? 0) > 0 && (
             <div>
               <div className="text-[10px] text-red-400/80 uppercase tracking-wider font-semibold mb-1.5 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> Migration Blockers
               </div>
               <ul className="space-y-1">
-                {(readiness.blockers as string[]).map((b, i) => (
+                {readiness.blockers!.map((b, i) => (
                   <li key={i} className="text-xs text-red-300/80 flex gap-1.5 items-start">
                     <span className="text-red-500 mt-0.5 shrink-0">✗</span>{b}
                   </li>
@@ -779,13 +794,11 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
               </ul>
             </div>
           )}
-
-          {/* Recommendations */}
-          {((readiness.recommendations as string[] | undefined)?.length ?? 0) > 0 && (
+          {(readiness.recommendations?.length ?? 0) > 0 && (
             <div>
               <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1.5">Recommendations</div>
               <ul className="space-y-1">
-                {(readiness.recommendations as string[]).map((r, i) => (
+                {readiness.recommendations!.map((r, i) => (
                   <li key={i} className="text-xs text-gray-400 flex gap-1.5 items-start">
                     <span className="text-blue-400 mt-0.5 shrink-0">›</span>{r}
                   </li>
@@ -793,14 +806,22 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
               </ul>
             </div>
           )}
-
-          {/* Azure Migrate raw output */}
+          {(readiness.dependencies_detected?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Detected Dependencies</div>
+              <div className="flex flex-wrap gap-1">
+                {readiness.dependencies_detected!.map((d, i) => (
+                  <span key={i} className="text-[10px] text-gray-400 bg-gray-700/50 rounded px-1.5 py-0.5">{d}</span>
+                ))}
+              </div>
+            </div>
+          )}
           {azMigrateRaw && (
             <details className="mt-2">
               <summary className="text-[10px] text-blue-400/70 cursor-pointer hover:text-blue-400 uppercase tracking-wider font-semibold select-none">
-                Azure Migrate raw output ▾
+                Raw Azure Migrate output ▾
               </summary>
-              <pre className="mt-2 text-[10px] text-gray-400 bg-gray-900/50 rounded p-3 overflow-auto max-h-64 leading-relaxed whitespace-pre-wrap break-words">
+              <pre className="mt-2 text-[10px] text-gray-400 bg-gray-900/50 rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap break-words">
                 {azMigrateRaw}
               </pre>
             </details>
@@ -808,90 +829,287 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
         </div>
       )}
 
-      {/* Azure Pricing Estimate */}
-      {pricing.monthly_eur != null && (
-        <div className="bg-gray-800 rounded-lg p-4 space-y-2">
-          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Azure Pricing Estimate</div>
-          <div className="text-2xl font-bold text-green-400">
-            €{Number(pricing.monthly_eur).toLocaleString()}
-            <span className="text-sm font-normal text-gray-400">/mo</span>
+      {/* ── 2. Source → Azure Service Mapping ──────────────────────────────── */}
+      {svcMapArr.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <GitBranch className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Source → Azure Service Mapping ({svcMapArr.length} services)
+            </span>
           </div>
-          {pricing.breakdown?.length > 0 && (
-            <div className="space-y-1 mt-1">
-              {(pricing.breakdown as any[]).map((b: any, i: number) => (
-                <div key={i} className="flex justify-between text-xs">
-                  <span className="text-gray-400 truncate">{b.service}{b.sku ? ` (${b.sku})` : ''}</span>
-                  <span className="text-gray-300 ml-2 shrink-0">€{Number(b.monthly_eur ?? 0).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {pricing.assumptions?.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-gray-700">
-              <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Assumptions</div>
-              {(pricing.assumptions as string[]).map((a, i) => (
-                <div key={i} className="text-[10px] text-gray-500">• {a}</div>
-              ))}
-            </div>
+          <div className="overflow-x-auto rounded-lg border border-gray-700/50">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-700/50 bg-gray-800/60">
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Source Service</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Azure Target</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">SKU</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Approach</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Complexity</th>
+                  <th className="text-right px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">€/mo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700/30">
+                {svcMapArr.map((s, i) => (
+                  <tr key={i} className="hover:bg-gray-800/30 transition-colors">
+                    <td className="px-3 py-2">
+                      <span className="font-mono text-orange-300/80">{s.source_service}</span>
+                      {s.source_tier && <span className="text-[10px] text-gray-600 ml-1">({s.source_tier})</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="text-blue-300 font-medium">{s.azure_target}</span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 font-mono text-[10px]">{s.azure_sku ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      {s.migration_approach && (
+                        <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                          s.migration_approach.includes('lift') ? 'text-green-400 bg-green-500/10'
+                            : s.migration_approach.includes('re-arch') ? 'text-red-400 bg-red-500/10'
+                            : 'text-yellow-400 bg-yellow-500/10'
+                        )}>
+                          {s.migration_approach}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {s.migration_complexity && (
+                        <span className={clsx('font-semibold', complexityColors[s.migration_complexity] ?? 'text-gray-400')}>
+                          {s.migration_complexity}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {s.estimated_monthly_eur != null
+                        ? <span className="text-green-400 font-mono">€{Number(s.estimated_monthly_eur).toLocaleString()}</span>
+                        : <span className="text-gray-600">—</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Expandable migration steps per service */}
+          {svcMapArr.some(s => (s.migration_steps?.length ?? 0) > 0) && (
+            <details className="mt-2">
+              <summary className="text-[10px] text-blue-400/70 cursor-pointer hover:text-blue-400 uppercase tracking-wider font-semibold select-none">
+                Migration steps per service ▾
+              </summary>
+              <div className="mt-3 space-y-3">
+                {svcMapArr.filter(s => (s.migration_steps?.length ?? 0) > 0).map((s, i) => (
+                  <div key={i} className="bg-gray-800/40 rounded p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-mono text-orange-300/80">{s.source_service}</span>
+                      <ChevronRight className="w-3 h-3 text-gray-600" />
+                      <span className="text-[10px] text-blue-300">{s.azure_target}</span>
+                      {s.azure_docs_url && (
+                        <a href={s.azure_docs_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400/70 hover:text-blue-400 flex items-center gap-0.5 ml-auto">
+                          <ExternalLink className="w-2.5 h-2.5" /> Docs
+                        </a>
+                      )}
+                    </div>
+                    <ol className="space-y-0.5 list-decimal list-inside">
+                      {s.migration_steps!.map((step, j) => (
+                        <li key={j} className="text-[10px] text-gray-500">{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </div>
       )}
 
-      {/* WAF Assessment */}
+      {/* ── 3. Pricing Estimate ────────────────────────────────────────────── */}
+      {(pricing.monthly_eur != null || (pricing.breakdown?.length ?? 0) > 0) && (
+        <div className="bg-gray-800/60 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-green-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Azure Cost Estimate (from Pricing API)</span>
+          </div>
+          <div className="flex items-end gap-6 flex-wrap">
+            <div>
+              <div className="text-[10px] text-gray-500 mb-0.5">Estimated Azure Monthly</div>
+              <div className="text-3xl font-bold text-green-400">
+                €{Number(pricing.monthly_eur ?? 0).toLocaleString()}
+                <span className="text-sm font-normal text-gray-400">/mo</span>
+              </div>
+            </div>
+            {pricing.current_monthly_eur != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Current (source cloud)</div>
+                <div className="text-xl font-bold text-gray-400">
+                  €{Number(pricing.current_monthly_eur).toLocaleString()}<span className="text-sm font-normal">/mo</span>
+                </div>
+              </div>
+            )}
+            {pricing.savings_pct != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Estimated Savings</div>
+                <div className={clsx('text-xl font-bold', Number(pricing.savings_pct) > 0 ? 'text-green-400' : 'text-red-400')}>
+                  {Number(pricing.savings_pct) > 0 ? '+' : ''}{pricing.savings_pct}%
+                </div>
+              </div>
+            )}
+          </div>
+          {(pricing.breakdown?.length ?? 0) > 0 && (
+            <div className="space-y-1 pt-2 border-t border-gray-700/50">
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-2">Line-Item Breakdown</div>
+              {pricing.breakdown!.map((b, i) => (
+                <div key={i} className="flex justify-between items-start text-xs gap-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-gray-300">{b.service}</span>
+                    {b.sku && <span className="text-gray-600 ml-1 font-mono text-[10px]">({b.sku})</span>}
+                    {b.quantity && <span className="text-gray-600 ml-1 text-[10px]">× {b.quantity}</span>}
+                    {b.notes && <div className="text-[10px] text-gray-600 mt-0.5">{b.notes}</div>}
+                  </div>
+                  <span className="text-green-400 font-mono shrink-0">€{Number(b.monthly_eur ?? 0).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(pricing.cost_optimization_tips?.length ?? 0) > 0 && (
+            <div className="pt-2 border-t border-gray-700/50">
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Cost Optimization Tips</div>
+              {pricing.cost_optimization_tips!.map((t, i) => (
+                <div key={i} className="text-[10px] text-gray-500 flex gap-1.5"><span className="text-green-500 shrink-0">↓</span>{t}</div>
+              ))}
+            </div>
+          )}
+          {(pricing.assumptions?.length ?? 0) > 0 && (
+            <details>
+              <summary className="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400 uppercase tracking-wider font-semibold select-none">
+                Assumptions ▾
+              </summary>
+              <div className="mt-1 space-y-0.5">
+                {pricing.assumptions!.map((a, i) => (
+                  <div key={i} className="text-[10px] text-gray-600">• {a}</div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* ── 4. WAF Assessment ──────────────────────────────────────────────── */}
       {Object.keys(waf).length > 0 && (
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3">Well-Architected Framework (from Azure MCP)</div>
-          <div className="grid grid-cols-5 gap-2">
+        <div className="bg-gray-800/60 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="w-4 h-4 text-purple-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Well-Architected Framework Assessment</span>
+          </div>
+          <div className="grid grid-cols-5 gap-2 mb-4">
             {wafPillars.map((pillar) => {
               const p = waf[pillar] ?? {}
               const score = p.score ?? 0
               return (
-                <div key={pillar} className="text-center">
-                  <div className={clsx('text-xl font-bold', wafColors[score] ?? 'text-gray-400')}>{score || '—'}</div>
-                  <div className="text-[9px] text-gray-500 mt-0.5 capitalize">{pillar.replace(/_/g, ' ')}</div>
+                <div key={pillar} className="text-center bg-gray-900/50 rounded-lg p-2">
+                  <div className={clsx('text-2xl font-bold', wafColors[score] ?? 'text-gray-400')}>{score || '—'}</div>
+                  <div className="text-[9px] text-gray-500 mt-0.5 capitalize leading-tight">{pillar.replace(/_/g, ' ')}</div>
                 </div>
               )
             })}
           </div>
-          {/* WAF findings per pillar */}
-          <div className="mt-3 space-y-1.5">
+          <div className="space-y-3">
             {wafPillars.map((pillar) => {
-              const findings = (waf[pillar]?.findings ?? []) as string[]
-              if (!findings.length) return null
+              const p = waf[pillar] ?? {}
+              const findings = p.findings ?? []
+              const recs = p.recommendations ?? []
+              if (!findings.length && !recs.length) return null
               return (
-                <div key={pillar}>
-                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold capitalize mb-0.5">{pillar.replace(/_/g, ' ')}</div>
-                  {findings.map((f, i) => (
-                    <div key={i} className="text-[10px] text-gray-500 flex gap-1"><span>•</span>{f}</div>
-                  ))}
-                </div>
+                <details key={pillar}>
+                  <summary className="text-[10px] text-gray-500 cursor-pointer hover:text-gray-300 uppercase tracking-wider font-semibold capitalize select-none">
+                    {pillar.replace(/_/g, ' ')} {p.score != null ? `(${p.score}/5)` : ''} ▾
+                  </summary>
+                  <div className="mt-2 pl-2 space-y-1.5 border-l border-gray-700/50">
+                    {findings.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-gray-600 font-semibold mb-0.5">Findings</div>
+                        {findings.map((f: string, i: number) => (
+                          <div key={i} className="text-[10px] text-gray-500 flex gap-1"><span>•</span>{f}</div>
+                        ))}
+                      </div>
+                    )}
+                    {recs.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-blue-500/70 font-semibold mb-0.5">Recommendations</div>
+                        {recs.map((r: string, i: number) => (
+                          <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-blue-400">›</span>{r}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </details>
               )
             })}
           </div>
         </div>
       )}
 
-      {/* Advisor Recommendations */}
+      {/* ── 5. Advisor Recommendations ────────────────────────────────────── */}
       {advisor.length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">
-            Azure Advisor Recommendations ({advisor.length})
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-4 h-4 text-orange-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Azure Advisor Recommendations ({advisor.length})
+            </span>
           </div>
           <div className="space-y-1.5">
-            {advisor.map((rec: any, i: number) => (
-              <div key={i} className="flex items-start gap-2 bg-gray-800 rounded-lg px-3 py-2">
-                <span className={clsx(
-                  'text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0 mt-0.5',
-                  rec.severity === 'high' ? 'text-red-400 bg-red-500/10' : rec.severity === 'medium' ? 'text-yellow-400 bg-yellow-500/10' : 'text-green-400 bg-green-500/10'
-                )}>{rec.severity ?? 'info'}</span>
-                <div className="flex-1 min-w-0">
-                  {rec.category && (
-                    <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category}</div>
-                  )}
-                  <div className="text-xs text-gray-400">{rec.recommendation}</div>
-                  {rec.impact && (
-                    <div className="text-[10px] text-gray-600 mt-0.5">Impact: {rec.impact}</div>
-                  )}
+            {advisor.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0 mt-0.5',
+                    rec.severity === 'high' ? 'text-red-400 bg-red-500/10'
+                      : rec.severity === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                      : 'text-green-400 bg-green-500/10'
+                  )}>{rec.severity ?? 'info'}</span>
+                  <div className="flex-1 min-w-0">
+                    {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category}</div>}
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.impact && <div className="text-[10px] text-gray-500 mt-0.5">Impact: {rec.impact}</div>}
+                  </div>
+                </div>
+                {(rec.implementation_steps?.length ?? 0) > 0 && (
+                  <details className="mt-2 pl-8">
+                    <summary className="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400 select-none">Implementation steps ▾</summary>
+                    <ol className="mt-1 space-y-0.5 list-decimal list-inside">
+                      {rec.implementation_steps!.map((s: string, j: number) => (
+                        <li key={j} className="text-[10px] text-gray-500">{s}</li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 6. Infrastructure Recommendations ─────────────────────────────── */}
+      {infraRecs.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Server className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Infrastructure Recommendations ({infraRecs.length})
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {infraRecs.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                    priorityColors[rec.priority] ?? 'text-gray-400 bg-gray-700'
+                  )}>{rec.priority}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.area}</div>
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                    {rec.effort && <div className="text-[10px] text-blue-400/60 mt-0.5">Effort: {rec.effort}</div>}
+                  </div>
                 </div>
               </div>
             ))}
@@ -899,23 +1117,106 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
         </div>
       )}
 
-      {/* Reference Architectures */}
+      {/* ── 7. Migration Path ──────────────────────────────────────────────── */}
+      {(migPath.phases?.length ?? 0) > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <GitBranch className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Migration Path</span>
+            {migPath.recommended_approach && (
+              <span className="text-[10px] text-blue-300 bg-blue-900/20 border border-blue-800/30 px-2 py-0.5 rounded-full">
+                {migPath.recommended_approach}
+              </span>
+            )}
+          </div>
+          {migPath.rationale && (
+            <div className="text-xs text-gray-500 mb-3">{migPath.rationale}</div>
+          )}
+          <div className="space-y-2">
+            {migPath.phases!.map((phase) => (
+              <details key={phase.phase} className="bg-gray-800/60 rounded-lg">
+                <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none hover:bg-gray-800 rounded-lg transition-colors">
+                  <span className="w-6 h-6 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-[10px] text-blue-300 font-bold shrink-0">
+                    {phase.phase}
+                  </span>
+                  <span className="text-sm font-medium text-white flex-1">{phase.name}</span>
+                  <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />{phase.duration_weeks}w
+                  </span>
+                </summary>
+                <div className="px-4 pb-3 space-y-2 border-t border-gray-700/40 pt-3">
+                  {(phase.services_to_migrate?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] text-gray-600 uppercase font-semibold mb-1">Services</div>
+                      <div className="flex flex-wrap gap-1">
+                        {phase.services_to_migrate!.map((s, i) => (
+                          <span key={i} className="text-[10px] text-blue-300/70 bg-blue-900/20 border border-blue-800/30 rounded px-1.5 py-0.5">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(phase.key_activities?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] text-gray-600 uppercase font-semibold mb-1">Key Activities</div>
+                      {phase.key_activities!.map((a, i) => (
+                        <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-blue-400">›</span>{a}</div>
+                      ))}
+                    </div>
+                  )}
+                  {(phase.risks?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] text-red-500/70 uppercase font-semibold mb-1">Risks</div>
+                      {phase.risks!.map((r, i) => (
+                        <div key={i} className="text-[10px] text-red-300/60 flex gap-1"><span>⚠</span>{r}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+          {(migPath.quick_wins?.length ?? 0) > 0 && (
+            <div className="mt-3 bg-green-900/10 border border-green-800/30 rounded-lg p-3">
+              <div className="text-[10px] text-green-400 uppercase font-semibold mb-1.5 flex items-center gap-1">
+                <Zap className="w-3 h-3" /> Quick Wins (&lt;2 weeks)
+              </div>
+              {migPath.quick_wins!.map((w, i) => (
+                <div key={i} className="text-[10px] text-green-300/70 flex gap-1.5"><span>✓</span>{w}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 8. Reference Architectures ────────────────────────────────────── */}
       {refArchs.length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">
-            Reference Architectures ({refArchs.length})
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart3 className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Reference Architectures ({refArchs.length})
+            </span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {refArchs.map((arch: any, i: number) => (
-              <div key={i} className="bg-gray-800 rounded-lg p-3">
-                {arch.fit_score != null && (
-                  <div className="text-[10px] text-blue-400 font-semibold mb-1">Fit: {arch.fit_score}/5</div>
-                )}
-                <div className="text-xs font-medium text-white mb-1">{arch.name}</div>
+          <div className="grid grid-cols-2 gap-2">
+            {refArchs.map((arch, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-xs font-medium text-white leading-snug">{arch.name}</div>
+                  {arch.fit_score != null && (
+                    <div className="text-[10px] text-blue-400 font-semibold shrink-0">Fit {arch.fit_score}/5</div>
+                  )}
+                </div>
                 <div className="text-[10px] text-gray-500 leading-snug">{arch.description}</div>
+                {(arch.key_components?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {arch.key_components!.map((c: string, j: number) => (
+                      <span key={j} className="text-[10px] text-gray-500 bg-gray-700/50 rounded px-1 py-0.5">{c}</span>
+                    ))}
+                  </div>
+                )}
                 {arch.url && (
-                  <a href={arch.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline mt-1 flex items-center gap-1">
-                    <ExternalLink className="w-2.5 h-2.5" /> Docs
+                  <a href={arch.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">
+                    <ExternalLink className="w-2.5 h-2.5" /> Microsoft Learn
                   </a>
                 )}
               </div>
@@ -924,23 +1225,39 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
         </div>
       )}
 
-      {/* Service-Specific Guidance */}
+      {/* ── 9. Per-Service Azure Guidance ─────────────────────────────────── */}
       {Object.keys(svcGuidance).length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">
-            Per-Service Azure Guidance ({Object.keys(svcGuidance).length} services)
+          <div className="flex items-center gap-2 mb-2">
+            <Server className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Per-Service Azure Guidance ({Object.keys(svcGuidance).length})
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {Object.entries(svcGuidance).map(([svc, g]: [string, any]) => (
-              <div key={svc} className="bg-gray-800 rounded-lg p-3 space-y-1">
-                <div className="text-xs font-semibold text-blue-300">{svc}</div>
+            {Object.entries(svcGuidance).map(([svc, g]) => (
+              <div key={svc} className="bg-gray-800/60 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-xs font-semibold text-blue-300">{svc}</div>
+                  {g.estimated_monthly_eur != null && (
+                    <span className="text-[10px] text-green-400 font-mono shrink-0">€{Number(g.estimated_monthly_eur).toLocaleString()}/mo</span>
+                  )}
+                </div>
                 {g.sku_recommendation && (
-                  <div className="text-[10px] text-gray-400">
-                    <span className="text-gray-600">SKU: </span>{g.sku_recommendation}
-                  </div>
+                  <div className="text-[10px] text-gray-400 font-mono bg-gray-900/40 rounded px-2 py-0.5">{g.sku_recommendation}</div>
+                )}
+                {g.sizing_notes && (
+                  <div className="text-[10px] text-gray-500">{g.sizing_notes}</div>
                 )}
                 {g.migration_notes && (
-                  <div className="text-[10px] text-gray-500 leading-snug">{g.migration_notes}</div>
+                  <div className="text-[10px] text-gray-400 leading-snug">{g.migration_notes}</div>
+                )}
+                {(g.configuration_tips?.length ?? 0) > 0 && (
+                  <ul className="space-y-0.5">
+                    {(g.configuration_tips as string[]).map((t: string, i: number) => (
+                      <li key={i} className="text-[10px] text-gray-500 flex gap-1"><span className="text-blue-400/60">•</span>{t}</li>
+                    ))}
+                  </ul>
                 )}
                 {g.docs_url && (
                   <a href={g.docs_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">
@@ -953,16 +1270,19 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
         </div>
       )}
 
-      {/* Best Practices */}
+      {/* ── 10. Best Practices ────────────────────────────────────────────── */}
       {practices.length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">
-            Azure Best Practices ({practices.length})
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle2 className="w-4 h-4 text-green-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Azure Best Practices ({practices.length})
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             {practices.map((p, i) => (
               <div key={i} className="flex items-start gap-1.5 text-xs text-gray-400">
-                <CheckCircle2 className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />
+                <CheckCircle2 className="w-3 h-3 text-green-400/70 mt-0.5 shrink-0" />
                 {p}
               </div>
             ))}

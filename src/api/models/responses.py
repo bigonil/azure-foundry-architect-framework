@@ -19,6 +19,7 @@ class AgentResultSummary(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_eur: float = 0.0
+    data: dict[str, Any] | None = None  # populated for mcp_enrichment only
 
 
 class AnalysisReportResponse(BaseModel):

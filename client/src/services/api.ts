@@ -95,12 +95,89 @@ export interface AnalysisRequest {
 
 export interface AgentResultSummary {
   agent_name: string
-  status: 'success' | 'partial' | 'failed'
+  status: 'success' | 'partial' | 'failed' | 'skipped'
   duration_seconds: number
   error?: string
   input_tokens?: number
   output_tokens?: number
   cost_eur?: number
+  data?: McpEnrichmentData  // populated for mcp_enrichment only
+}
+
+export interface McpServiceMapping {
+  source_service: string
+  source_tier?: string
+  azure_target: string
+  azure_sku?: string
+  migration_approach?: string
+  estimated_monthly_eur?: number
+  migration_complexity?: string
+  migration_steps?: string[]
+  azure_docs_url?: string
+}
+
+export interface McpInfraRecommendation {
+  area: string
+  priority: string
+  recommendation: string
+  rationale?: string
+  effort?: string
+}
+
+export interface McpMigrationPhase {
+  phase: number
+  name: string
+  duration_weeks: number
+  services_to_migrate?: string[]
+  key_activities?: string[]
+  risks?: string[]
+  dependencies?: string[]
+}
+
+export interface McpEnrichmentData {
+  migration_readiness?: {
+    overall_score?: string | number
+    suitability?: string
+    blockers?: string[]
+    recommendations?: string[]
+    dependencies_detected?: string[]
+    estimated_migration_effort_weeks?: number
+  }
+  azure_migrate_raw?: string
+  aws_to_azure_service_mapping?: McpServiceMapping[]
+  azure_pricing_estimate?: {
+    monthly_eur?: number
+    current_monthly_eur?: number
+    savings_pct?: number
+    breakdown?: Array<{ service: string; sku?: string; quantity?: string; monthly_eur?: number; notes?: string }>
+    cost_optimization_tips?: string[]
+    assumptions?: string[]
+  }
+  advisor_recommendations?: Array<{
+    category?: string
+    severity?: string
+    recommendation?: string
+    impact?: string
+    implementation_steps?: string[]
+  }>
+  waf_assessment?: Record<string, { score?: number; findings?: string[]; recommendations?: string[] }>
+  reference_architectures?: Array<{ name?: string; url?: string; fit_score?: number; description?: string; key_components?: string[] }>
+  service_guidance?: Record<string, { sku_recommendation?: string; sizing_notes?: string; migration_notes?: string; configuration_tips?: string[]; docs_url?: string; estimated_monthly_eur?: number }>
+  infrastructure_recommendations?: McpInfraRecommendation[]
+  migration_path?: {
+    recommended_approach?: string
+    rationale?: string
+    phases?: McpMigrationPhase[]
+    critical_path_items?: string[]
+    quick_wins?: string[]
+  }
+  best_practices?: string[]
+  devops_context?: { projects?: any[]; repos?: any[]; pipelines?: any[]; work_items?: any[]; ci_cd_maturity?: string; migration_items_found?: number }
+  azure_skills_called?: string[]
+  enrichment_quality?: string
+  enrichment_notes?: string
+  parse_error?: boolean
+  raw_text?: string
 }
 
 export interface AnalysisReport {

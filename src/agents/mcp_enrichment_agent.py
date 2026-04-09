@@ -37,7 +37,7 @@ from src.agents.base_agent import AgentResult, BaseAgent
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 12          # safety cap on the tool-use loop
+MAX_ITERATIONS = 25          # safety cap on the tool-use loop
 MAX_TOOLS_PER_SERVER = 60   # avoid context overflow
 SSE_CONNECT_RETRIES = 3     # retry SSE connection on transient disconnects
 SSE_RETRY_DELAY = 2.0       # seconds between retries
@@ -318,115 +318,291 @@ class McpEnrichmentAgent(BaseAgent):
         target_cloud = context.get("target_cloud", "azure")
         project_name = context.get("project_name", "")
         devops_org = context.get("azure_devops_org", "")
+        monthly_cost_usd = context.get("current_monthly_cost_usd", 0) or 0
+        additional_context = context.get("additional_context", "")
 
+        # ── Code analysis context ──────────────────────────────────────────────
         tech_inventory = code_results.get("technology_inventory", {})
         arch_patterns = code_results.get("architecture_patterns", {})
         coupling = code_results.get("cloud_coupling", {})
         coupling_score = code_results.get("coupling_score", "UNKNOWN")
+        dependencies = code_results.get("dependencies", [])
+        security_issues = code_results.get("security_findings", [])
 
+        # ── Infra analysis context ─────────────────────────────────────────────
         resource_inventory = infra_results.get("resource_inventory", [])
         service_mapping = infra_results.get("service_mapping", [])
         total_resources = infra_results.get("total_resources", len(resource_inventory))
+        network_topology = infra_results.get("network_topology", {})
+        security_posture = infra_results.get("security_posture", {})
+        migration_complexity = infra_results.get("migration_complexity", {})
+        estimated_azure_monthly = infra_results.get("estimated_azure_monthly_cost_usd", 0) or 0
 
-        phase1_summary = {
+        # Build full service mapping table
+        svc_mapping_rows = []
+        for s in service_mapping[:30]:
+            src = s.get("source_service", "")
+            tgt = s.get("azure_equivalent", "")
+            migration_type = s.get("migration_type", "")
+            complexity = s.get("complexity", "")
+            if src or tgt:
+                svc_mapping_rows.append({
+                    "source_service": src,
+                    "azure_target": tgt,
+                    "migration_type": migration_type,
+                    "complexity": complexity,
+                    "notes": s.get("notes", ""),
+                })
+
+        # Build resource list for pricing calls
+        resource_summary = []
+        for r in resource_inventory[:20]:
+            resource_summary.append({
+                "type": r.get("type", r.get("resource_type", "")),
+                "name": r.get("name", ""),
+                "region": r.get("region", ""),
+                "size": r.get("size", r.get("instance_type", "")),
+            })
+
+        phase1_context = {
+            "project": project_name,
             "source_cloud": source_cloud,
             "target_cloud": target_cloud,
-            "project": project_name,
+            "current_monthly_cost_usd": monthly_cost_usd,
+            "infra_analyzer_estimated_azure_cost_usd": estimated_azure_monthly,
             "cloud_coupling_score": coupling_score,
             "languages": tech_inventory.get("languages", []),
             "frameworks": tech_inventory.get("frameworks", []),
+            "cloud_sdks_detected": coupling.get("sdks_detected", []),
             "architecture_type": arch_patterns.get("type", "unknown"),
-            "total_resources": total_resources,
-            "source_services_detected": [
-                s.get("source_service") for s in service_mapping[:20] if s.get("source_service")
-            ],
-            "azure_target_services": [
-                s.get("azure_equivalent") for s in service_mapping[:20] if s.get("azure_equivalent")
-            ],
-            "cloud_sdk_references": coupling.get("sdks_detected", []),
+            "architecture_patterns": arch_patterns.get("patterns", []),
+            "total_infra_resources": total_resources,
+            "key_dependencies": dependencies[:10],
+            "security_findings": security_issues[:5],
+            "network_topology": network_topology,
+            "security_posture": security_posture,
+            "migration_complexity": migration_complexity,
         }
 
         devops_section = ""
         if devops_org:
             devops_section = (
-                f"\n## Azure DevOps Context\nOrganization: {devops_org}\n"
-                "If Azure DevOps MCP tools are available, call:\n"
-                "- core_list_projects to list migration-related projects\n"
-                "- repo_list_repos_by_project to understand repo structure\n"
-                "- pipelines_get_builds to assess CI/CD maturity\n"
-                "- wit_list_backlogs to identify existing migration work items\n"
+                f"\n## Azure DevOps Context\nOrganization: `{devops_org}`\n"
+                "Call these DevOps tools in sequence:\n"
+                "1. `core_list_projects` — list all projects\n"
+                "2. `repo_list_repos_by_project` — list repositories (use first relevant project)\n"
+                "3. `pipelines_get_builds` — assess CI/CD maturity and pipeline health\n"
+                "4. `wit_list_backlogs` — check existing migration work items\n"
+                "5. `search_workitem` with query 'migration' — find migration-related items\n"
+                "Include all findings in `devops_context` in the output.\n"
             )
 
+        additional_section = ""
+        if additional_context:
+            additional_section = f"\n## Additional Context from Customer\n{additional_context}\n"
+
         return f"""
-Enrich the following cloud migration analysis using ALL available Azure MCP tools and Skills.
+You are the Azure MCP Enrichment Agent. Your mission: produce a COMPREHENSIVE Azure migration
+intelligence report by calling ALL relevant Azure MCP tools.
 
-## Phase 1 Analysis Summary
-{json.dumps(phase1_summary, indent=2)}
+DO NOT generate estimates from training data alone. Call the tools, get REAL data.
+CALL AS MANY TOOLS AS NEEDED — minimum 10 tool calls expected for a quality report.
 
-## Your Task
-Use the available tools to gather real Azure intelligence. CALL EVERY RELEVANT TOOL.
+## Phase 1 Analysis Results
+```json
+{json.dumps(phase1_context, indent=2)}
+```
 
-**START HERE — call these tools FIRST in this exact order:**
-1. Call **azuremigrate** tool immediately — assess migration readiness, blockers, and suitability for Azure of this workload. This is the MOST IMPORTANT call.
-2. Call **pricing** to get actual Azure pricing for the target services identified above
-3. Call **advisor** to get Azure Advisor recommendations for this migration scenario
-4. Call **wellarchitectedframework** to assess the proposed target architecture
-5. Call **cloudarchitect** to get matching reference architectures
-6. Call **get_azure_bestpractices** for the specific services and migration pattern
-7. Call service-specific tools for each detected technology:
-   - databases: sql / postgres / mysql / cosmos / redis (as appropriate)
-   - messaging: servicebus / eventhubs / eventgrid (as appropriate)
-   - compute: aks / appservice / containerapps / functions (as appropriate)
-   - storage: storage / fileshares (as appropriate)
-   - security: keyvault / role / policy (as appropriate)
-   - observability: monitor / applicationinsights (as appropriate)
+## Detected Source→Azure Service Mapping (from infra_analyzer)
+```json
+{json.dumps(svc_mapping_rows, indent=2)}
+```
+
+## Infrastructure Resources to Price
+```json
+{json.dumps(resource_summary, indent=2)}
+```
+{additional_section}
+## MANDATORY Tool Call Sequence — execute in this order:
+
+### BLOCK 1 — Migration Assessment (call first, always)
+1. `azuremigrate` — migration readiness, suitability, discovered dependencies, blockers
+2. `cloudarchitect` — reference architectures for {source_cloud}→Azure migration pattern with {arch_patterns.get("type", "this architecture")}
+
+### BLOCK 2 — Pricing & Cost (call for EVERY detected service)
+3. `pricing` — get Azure Retail Prices for the target services above; build a line-by-line cost estimate
+   - For each resource in the resource list above, get actual SKU pricing
+   - Include compute, storage, networking, databases, messaging in your pricing calls
+   - Target: produce a monthly EUR estimate that replaces the current ${monthly_cost_usd}/mo
+
+### BLOCK 3 — Architecture & Best Practices
+4. `wellarchitectedframework` — WAF assessment for the proposed Azure target architecture
+5. `get_azure_bestpractices` — best practices for {source_cloud}→Azure migration
+6. `documentation` — get migration guides for {source_cloud} to Azure
+{"7. `azureterraformbestpractices` — IaC best practices (Terraform detected)" if any("terraform" in str(d).lower() for d in dependencies[:10]) else ""}
+
+### BLOCK 4 — Service-Specific Guidance (call for EACH detected service)
+Based on the service mapping above, call the relevant tools:
+{"- `aks` — AKS guidance (Kubernetes detected)" if any("k8s" in str(s).lower() or "kubernetes" in str(s).lower() or "aks" in str(s).lower() for s in svc_mapping_rows) else ""}
+{"- `appservice` — App Service guidance (web app detected)" if any("app_service" in str(s).lower() or "appservice" in str(s).lower() or "elastic_beanstalk" in str(s).lower() for s in svc_mapping_rows) else ""}
+{"- `containerapps` — Container Apps (containerized workload detected)" if any("container" in str(s).lower() or "ecs" in str(s).lower() or "fargate" in str(s).lower() for s in svc_mapping_rows) else ""}
+{"- `sql` / `postgres` / `mysql` — database migration guidance" if any(db in str(svc_mapping_rows).lower() for db in ["sql", "postgres", "mysql", "rds"]) else ""}
+{"- `cosmos` — Cosmos DB guidance (NoSQL detected)" if any(db in str(svc_mapping_rows).lower() for db in ["dynamodb", "mongo", "cosmos", "nosql"]) else ""}
+{"- `servicebus` / `eventhubs` — messaging migration" if any(q in str(svc_mapping_rows).lower() for q in ["sqs", "kafka", "rabbitmq", "servicebus", "eventhub"]) else ""}
+{"- `storage` — Blob Storage migration (S3/object storage detected)" if any("s3" in str(s).lower() or "storage" in str(s).lower() for s in svc_mapping_rows) else ""}
+{"- `functions` / `functionapp` — serverless migration (Lambda detected)" if any("lambda" in str(s).lower() or "function" in str(s).lower() for s in svc_mapping_rows) else ""}
+- `keyvault` — secrets and certificate management guidance
+- `monitor` — observability setup guidance
+- `applicationinsights` — APM setup guidance
+- `advisor` — Azure Advisor recommendations for this workload
+- `role` — managed identity and RBAC setup
+- `policy` — governance and compliance
 {devops_section}
-## Required Output
-After calling all relevant tools, return a comprehensive JSON object.
-IMPORTANT: include `azure_migrate_raw` verbatim from the Azure Migrate data already provided above.
+## REQUIRED JSON Output
+
+After completing ALL tool calls above, return this comprehensive JSON:
+
+```json
 {{
   "migration_readiness": {{
-    "overall_score": "<percentage or rating>",
-    "suitability": "<cloud|conditional|not suitable>",
-    "blockers": ["<blocker>"],
-    "recommendations": ["<recommendation>"]
+    "overall_score": "<e.g. 78% or High/Medium/Low>",
+    "suitability": "<cloud|conditional|not_suitable>",
+    "blockers": ["<specific blocker with details>"],
+    "recommendations": ["<actionable recommendation>"],
+    "dependencies_detected": ["<external dependency>"],
+    "estimated_migration_effort_weeks": <number>
   }},
-  "azure_migrate_raw": "<full verbatim text from the Azure Migrate skill result>",
+  "azure_migrate_raw": "<verbatim text from Azure Migrate skill>",
+  "aws_to_azure_service_mapping": [
+    {{
+      "source_service": "<AWS/GCP/on-prem service name>",
+      "source_tier": "<e.g. t3.large, db.r5.2xlarge>",
+      "azure_target": "<exact Azure service name>",
+      "azure_sku": "<e.g. Standard_D2s_v3, GP_Gen5_4>",
+      "migration_approach": "<lift-and-shift|re-platform|re-architect>",
+      "estimated_monthly_eur": <number>,
+      "migration_complexity": "<low|medium|high>",
+      "migration_steps": ["<step 1>", "<step 2>"],
+      "azure_docs_url": "<url>"
+    }}
+  ],
   "azure_pricing_estimate": {{
-    "monthly_eur": <number>,
-    "breakdown": [{{"service": "<name>", "sku": "<sku>", "monthly_eur": <number>}}],
+    "monthly_eur": <total>,
+    "current_monthly_eur": <converted from ${monthly_cost_usd}>,
+    "savings_pct": <percentage>,
+    "breakdown": [
+      {{
+        "service": "<azure service>",
+        "sku": "<sku>",
+        "quantity": "<e.g. 2x vCores>",
+        "monthly_eur": <number>,
+        "notes": "<e.g. includes reserved instance discount>"
+      }}
+    ],
+    "cost_optimization_tips": ["<tip>"],
     "assumptions": ["<assumption>"]
   }},
   "advisor_recommendations": [
-    {{"category": "<cost|security|reliability|performance|ops>", "severity": "<high|medium|low>", "recommendation": "<text>", "impact": "<text>"}}
+    {{
+      "category": "<cost|security|reliability|performance|operational_excellence>",
+      "severity": "<high|medium|low>",
+      "recommendation": "<detailed text>",
+      "impact": "<quantified impact if possible>",
+      "implementation_steps": ["<step>"]
+    }}
   ],
   "waf_assessment": {{
-    "reliability": {{"score": <1-5>, "findings": ["<finding>"]}},
-    "security": {{"score": <1-5>, "findings": ["<finding>"]}},
-    "cost_optimization": {{"score": <1-5>, "findings": ["<finding>"]}},
-    "operational_excellence": {{"score": <1-5>, "findings": ["<finding>"]}},
-    "performance_efficiency": {{"score": <1-5>, "findings": ["<finding>"]}}
+    "reliability": {{
+      "score": <1-5>,
+      "findings": ["<finding>"],
+      "recommendations": ["<recommendation>"]
+    }},
+    "security": {{
+      "score": <1-5>,
+      "findings": ["<finding>"],
+      "recommendations": ["<recommendation>"]
+    }},
+    "cost_optimization": {{
+      "score": <1-5>,
+      "findings": ["<finding>"],
+      "recommendations": ["<recommendation>"]
+    }},
+    "operational_excellence": {{
+      "score": <1-5>,
+      "findings": ["<finding>"],
+      "recommendations": ["<recommendation>"]
+    }},
+    "performance_efficiency": {{
+      "score": <1-5>,
+      "findings": ["<finding>"],
+      "recommendations": ["<recommendation>"]
+    }}
   }},
   "reference_architectures": [
-    {{"name": "<arch name>", "url": "<docs url>", "fit_score": <1-5>, "description": "<text>"}}
+    {{
+      "name": "<architecture name>",
+      "url": "<Microsoft Learn / Azure Docs URL>",
+      "fit_score": <1-5>,
+      "description": "<why this matches>",
+      "key_components": ["<component>"]
+    }}
   ],
   "service_guidance": {{
     "<azure_service_name>": {{
-      "sku_recommendation": "<sku>",
-      "migration_notes": "<text>",
-      "docs_url": "<url>"
+      "sku_recommendation": "<specific SKU with justification>",
+      "sizing_notes": "<CPU/RAM/storage sizing based on source>",
+      "migration_notes": "<step-by-step migration guidance>",
+      "configuration_tips": ["<tip>"],
+      "docs_url": "<url>",
+      "estimated_monthly_eur": <number>
     }}
   }},
-  "best_practices": ["<practice>"],
+  "infrastructure_recommendations": [
+    {{
+      "area": "<networking|security|scalability|resilience|cost>",
+      "priority": "<critical|high|medium|low>",
+      "recommendation": "<detailed recommendation>",
+      "rationale": "<why this matters>",
+      "effort": "<days estimate>"
+    }}
+  ],
+  "migration_path": {{
+    "recommended_approach": "<lift-and-shift|re-platform|re-architect|hybrid>",
+    "rationale": "<why this approach>",
+    "phases": [
+      {{
+        "phase": 1,
+        "name": "<phase name>",
+        "duration_weeks": <number>,
+        "services_to_migrate": ["<service>"],
+        "key_activities": ["<activity>"],
+        "risks": ["<risk>"],
+        "dependencies": ["<dependency>"]
+      }}
+    ],
+    "critical_path_items": ["<item>"],
+    "quick_wins": ["<win achievable in <2 weeks>"]
+  }},
+  "best_practices": ["<specific best practice with context>"],
   "devops_context": {{
     "projects": [],
     "repos": [],
     "pipelines": [],
-    "work_items": []
+    "work_items": [],
+    "ci_cd_maturity": "<low|medium|high>",
+    "migration_items_found": <number>
   }},
   "azure_skills_called": ["<skill_name>"],
-  "enrichment_quality": "<high|medium|low>"
+  "enrichment_quality": "<high|medium|low>",
+  "enrichment_notes": "<any caveats about missing data or partial results>"
 }}
+```
+
+IMPORTANT:
+- `azure_migrate_raw`: copy the full verbatim text from the Azure Migrate skill result already provided
+- `aws_to_azure_service_mapping`: build one entry per source service using REAL pricing from the pricing tool
+- `azure_pricing_estimate.monthly_eur`: must be computed from REAL pricing tool results, not estimates
+- Every `docs_url` must be a real Microsoft Learn or Azure documentation URL from the documentation tool
 """
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -441,15 +617,19 @@ IMPORTANT: include `azure_migrate_raw` verbatim from the Azure Migrate data alre
             return {
                 "migration_readiness": data.get("migration_readiness", {}),
                 "azure_migrate_raw": data.get("azure_migrate_raw", ""),
+                "aws_to_azure_service_mapping": data.get("aws_to_azure_service_mapping", []),
                 "azure_pricing_estimate": data.get("azure_pricing_estimate", {}),
                 "advisor_recommendations": data.get("advisor_recommendations", []),
                 "waf_assessment": data.get("waf_assessment", {}),
                 "reference_architectures": data.get("reference_architectures", []),
                 "service_guidance": data.get("service_guidance", {}),
+                "infrastructure_recommendations": data.get("infrastructure_recommendations", []),
+                "migration_path": data.get("migration_path", {}),
                 "best_practices": data.get("best_practices", []),
                 "devops_context": data.get("devops_context", {}),
                 "azure_skills_called": data.get("azure_skills_called", []),
                 "enrichment_quality": data.get("enrichment_quality", "unknown"),
+                "enrichment_notes": data.get("enrichment_notes", ""),
                 "raw": data,
             }
         except (json.JSONDecodeError, TypeError, AttributeError):
