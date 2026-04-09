@@ -211,6 +211,8 @@ When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs bet
 
 The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) and uses **`claude-haiku-4-5-20251001`** (configurable via `ANTHROPIC_MODEL_MCP`) to stay within rate limits across 10–30 tool calls per analysis. Rate limit errors exit the loop gracefully and return partial results.
 
+**`azuremigrate` is always called first** (mandatory pre-call before the Claude loop). The backend invokes it directly via `sess.call_tool()` before entering the Claude tool-use loop — guaranteeing migration assessment data is captured regardless of Claude’s tool selection. The raw result is injected into Claude’s initial message and stored verbatim as `azure_migrate_raw` in the report (shown in a collapsible block in the UI). SSE connections include a **3-attempt retry with 2s backoff** to survive transient disconnects (e.g. after a uvicorn hot-reload).
+
 **Azure MCP Skills called (all relevant ones per scenario):**
 
 | Category | Skills |
@@ -409,7 +411,7 @@ Open [http://localhost:5173](http://localhost:5173)
 |---|---|
 | Agent Status Bar | Each agent status, duration, token usage |
 | **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown |
-| **Azure MCP Enrichment** | Skills called, **Azure Migrate assessment** (score + suitability + blockers), real pricing + breakdown, Advisor recs (all, with category/impact), WAF scores + findings, reference architectures (with fit scores), per-service SKU guidance, best practices |
+| **Azure MCP Enrichment** | Skills called, **Azure Migrate assessment** (score + suitability + blockers + raw output), real pricing + breakdown, Advisor recs (all, with category/impact), WAF scores + findings, reference architectures (with fit scores), per-service SKU guidance, best practices |
 | Executive Summary | C-level summary with EUR values |
 | Strategy / Timeline / Savings | 6R strategy, weeks, monthly savings |
 | Key Findings & Risks | Agent-derived findings and critical risks |
@@ -548,8 +550,9 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | Phase 2 agents fail with 400/500 when MCP enabled | base_agent was passing MCP servers to Anthropic beta | Fixed — `base_agent` uses standard API; Phase 2 agents get MCP data via context |
 | Rate limit 429 in MCP loop | Claude Opus + many tool calls | Fixed — Haiku used for MCP loop; exits gracefully on 429 |
 | `unhandled errors in a TaskGroup` | `BaseExceptionGroup` not caught by `except Exception` | Fixed — `except BaseException` with re-raise for SystemExit |
-| DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Error caught gracefully; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG` are correct |
-| `infra_analyzer: Could not parse JSON response` | Large infra response truncated (max_tokens too small) | Fixed — `max_tokens` raised to 8192 in `infra_analyzer.yaml` |
+| DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Caught gracefully with 3-attempt retry; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG` |
+| `infra_analyzer: Could not parse JSON response` | Large infra response truncated (max_tokens too small) OR Claude returned JSON array instead of object | Fixed — `max_tokens` raised to 8192; `parse_response` now normalises JSON arrays to objects |
+| `Server disconnected without sending a response` | SSE session dropped after uvicorn hot-reload | Fixed — SSE connect retried up to 3 times with 2s backoff before giving up |
 | `SONARCLOUD_TOKEN not set — skipping SonarCloud` | Settings `lru_cache` loaded before `.env` update | Restart the backend after editing `.env`. Both `SONARCLOUD_TOKEN` and `SONARCLOUD_ORG` must be set |
 
 ---
