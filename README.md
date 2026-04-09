@@ -114,7 +114,7 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 azure-foundry-architect-framework/
 ├── src/
 │   ├── agents/
-│   │   ├── base_agent.py             # Abstract base (Anthropic + Azure + Foundry modes)
+│   │   ├── base_agent.py             # Abstract base — standard messages API only (no MCP beta)
 │   │   ├── orchestrator.py           # Phases 1→1.5→2→3, _build_mcp_servers, token aggregation
 │   │   ├── code_analyzer.py          # + SonarCloud enrichment
 │   │   ├── infra_analyzer.py
@@ -207,7 +207,9 @@ Based on: **code quality** (SonarCloud metrics + static analysis) + **cloud coup
 
 When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs between Phase 1 and Phase 2. It calls Azure Skills to retrieve **real Azure intelligence** and injects it into the synthesis prompt — so the final report uses actual pricing, actual migration readiness scores, and real Azure Advisor recommendations instead of estimates.
 
-**Implementation**: The backend connects to MCP servers directly via SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) — no Anthropic MCP beta required. The tool-use loop uses **`claude-haiku-4-5-20251001`** (configurable via `ANTHROPIC_MODEL_MCP`) to stay within rate limits across 10–30 tool calls per analysis. Rate limit errors exit the loop gracefully and return partial results.
+**Implementation**: Only `McpEnrichmentAgent` (Phase 1.5) interacts with MCP. All other agents (Phase 1 and Phase 2) use the standard Anthropic messages API and receive MCP enrichment data already injected into their context. This avoids the Anthropic MCP beta limitation where server URLs must be publicly reachable from Anthropic's cloud.
+
+The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) and uses **`claude-haiku-4-5-20251001`** (configurable via `ANTHROPIC_MODEL_MCP`) to stay within rate limits across 10–30 tool calls per analysis. Rate limit errors exit the loop gracefully and return partial results.
 
 **Azure MCP Skills called (all relevant ones per scenario):**
 
@@ -542,7 +544,8 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | `Couldn't find a valid ICU package` | .NET globalization deps missing | `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` set in Dockerfile |
 | `fetch failed` on Azure DevOps | Corporate SSL inspection proxy | `NODE_TLS_REJECT_UNAUTHORIZED=0` set in compose.yml |
 | `Not enough non-option arguments` | Missing `organization` positional arg | `AZURE_DEVOPS_ORG` must be set in `.env` |
-| `Access to this MCP server is blocked` | Anthropic MCP beta tried to reach local URL | Fixed — backend uses local SSE client, not Anthropic beta |
+| `Access to this MCP server is blocked` | Anthropic MCP beta tried to reach local URL | Fixed — only `McpEnrichmentAgent` uses MCP via local SSE client |
+| Phase 2 agents fail with 400/500 when MCP enabled | base_agent was passing MCP servers to Anthropic beta | Fixed — `base_agent` uses standard API; Phase 2 agents get MCP data via context |
 | Rate limit 429 in MCP loop | Claude Opus + many tool calls | Fixed — Haiku used for MCP loop; exits gracefully on 429 |
 | `unhandled errors in a TaskGroup` | `BaseExceptionGroup` not caught by `except Exception` | Fixed — `except BaseException` with re-raise for SystemExit |
 
