@@ -210,7 +210,7 @@ Return the orchestration plan as JSON.
             else:
                 agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
                 result = await agent.run(
-                    context, session_id=request.session_id, mcp_servers=request.mcp_servers
+                    context, session_id=request.session_id
                 )
                 if result.status == "success":
                     await cache_set(akey, result.to_dict(), agent_ttl)
@@ -270,7 +270,7 @@ Return the orchestration plan as JSON.
                 async with semaphore:
                     agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
                     result = await agent.run(
-                        context, session_id=request.session_id, mcp_servers=active_mcp
+                        context, session_id=request.session_id
                     )
                     if result.status == "success":
                         await cache_set(akey, result.to_dict(), agent_ttl)

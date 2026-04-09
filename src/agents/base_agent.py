@@ -275,49 +275,20 @@ class BaseAgent(ABC):
         )
         user_message = self.build_user_message(context)
 
-        # Filter to enabled URL-type MCP servers only (stdio requires local processes)
-        active_mcp = [
-            s for s in (mcp_servers or [])
-            if s.get("enabled", True) and s.get("type") == "url" and s.get("url")
-        ]
+        # MCP enrichment is handled exclusively by McpEnrichmentAgent via local SSE client.
+        # Specialist agents (code_analyzer, infra_analyzer, cost_optimizer, …) receive
+        # MCP enrichment data already injected into context — they never call MCP directly.
+        # The Anthropic MCP beta is NOT used: local Docker URLs are unreachable from
+        # Anthropic's cloud infrastructure.
 
         try:
-            if active_mcp:
-                logger.info(
-                    "[%s] Using MCP beta with %d server(s): %s",
-                    self.agent_name,
-                    len(active_mcp),
-                    [s.get("name") for s in active_mcp],
-                )
-                response = await client.beta.messages.create(
-                    model=self.settings.anthropic_model,
-                    max_tokens=self.max_tokens,
-                    system=system,
-                    messages=[{"role": "user", "content": user_message}],
-                    mcp_servers=[
-                        {k: v for k, v in {
-                            "type": "url",
-                            "url": s["url"],
-                            "name": s["name"],
-                            "authorization_token": s.get("authorization_token"),
-                        }.items() if v is not None}
-                        for s in active_mcp
-                    ],
-                    betas=["mcp-client-2025-04-04"],
-                )
-                # Content may include tool-use blocks; find the last text block
-                raw = next(
-                    (b.text for b in reversed(response.content) if hasattr(b, "text")),
-                    "",
-                )
-            else:
-                response = await client.messages.create(
-                    model=self.settings.anthropic_model,
-                    max_tokens=self.max_tokens,
-                    system=system,
-                    messages=[{"role": "user", "content": user_message}],
-                )
-                raw = response.content[0].text
+            response = await client.messages.create(
+                model=self.settings.anthropic_model,
+                max_tokens=self.max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            raw = response.content[0].text
 
         except anthropic.AuthenticationError:
             raise RuntimeError(
