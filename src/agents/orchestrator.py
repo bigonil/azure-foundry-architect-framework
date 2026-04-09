@@ -304,6 +304,12 @@ Return the orchestration plan as JSON.
         else:
             synthesis_data = await self._synthesize_azure(synthesis_prompt)
 
+        # Guard: Claude may return a JSON array instead of object — wrap it
+        if isinstance(synthesis_data, list):
+            synthesis_data = {"key_findings": synthesis_data}
+        elif not isinstance(synthesis_data, dict):
+            synthesis_data = {"raw_text": str(synthesis_data)}
+
         return AnalysisReport(
             session_id=request.session_id,
             project_name=request.project_name,

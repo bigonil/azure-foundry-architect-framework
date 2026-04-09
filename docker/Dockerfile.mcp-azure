@@ -26,9 +26,16 @@ ENV AZURE_SUBSCRIPTION_ID=""
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD nc -z localhost 3333 || exit 1
 
-# supergateway bridges stdio → SSE; backend connects to /sse
-# npx is used instead of the global binary to ensure PATH resolution on Alpine
-CMD ["supergateway", \
-     "--stdio", "npx -y @azure/mcp@latest server start", \
-     "--port", "3333", \
-     "--baseUrl", "http://mcp-azure:3333"]
+# supergateway bridges stdio → SSE; backend connects to /sse.
+# The shell loop restarts supergateway immediately after each exit (crash or clean close),
+# giving each SSE session a fresh @azure/mcp child process and preventing the
+# "Already connected to a transport" error thrown by the MCP SDK on reconnect.
+CMD ["sh", "-c", \
+     "while true; do \
+        supergateway \
+          --stdio 'npx -y @azure/mcp@latest server start' \
+          --port 3333 \
+          --baseUrl http://mcp-azure:3333 \
+        || true; \
+        sleep 0.5; \
+      done"]
