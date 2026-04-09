@@ -101,7 +101,11 @@ class McpEnrichmentAgent(BaseAgent):
                 duration_seconds=duration,
                 input_tokens=in_tok, output_tokens=out_tok,
             )
-        except Exception as exc:
+        except BaseException as exc:
+            # Catch BaseExceptionGroup (Python 3.11 anyio TaskGroup errors from MCP SSE)
+            # as well as regular Exception. Re-raise hard exits.
+            if isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                raise
             duration = time.monotonic() - start
             logger.error("[mcp_enrichment] Failed after %.1fs: %s", duration, exc)
             return AgentResult(
@@ -120,6 +124,9 @@ class McpEnrichmentAgent(BaseAgent):
         mcp_servers: list[dict[str, Any]],
     ) -> tuple[dict[str, Any], int, int]:
 
+        # Use Haiku for the tool-use loop: many back-and-forth calls exhaust Opus rate limits.
+        # Haiku has 10× higher TPM limits and is well-suited for tool orchestration.
+        model = self.settings.anthropic_model_mcp
         client = anthropic.AsyncAnthropic(
             api_key=self.settings.anthropic_api_key or None
         )
@@ -139,7 +146,9 @@ class McpEnrichmentAgent(BaseAgent):
                     await session.initialize()
                     named_sessions.append((name, session))
                     logger.info("[mcp_enrichment] Connected to '%s' at %s", name, url)
-                except Exception as exc:
+                except BaseException as exc:
+                    if isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                        raise
                     logger.warning(
                         "[mcp_enrichment] Cannot reach '%s' (%s): %s — skipping",
                         name, url, exc,
@@ -187,13 +196,21 @@ class McpEnrichmentAgent(BaseAgent):
 
             last_response = None
             for iteration in range(MAX_ITERATIONS):
-                response = await client.messages.create(
-                    model=self.settings.anthropic_model,
-                    max_tokens=self.max_tokens,
-                    system=self.system_prompt,
-                    tools=anthropic_tools,
-                    messages=messages,
-                )
+                try:
+                    response = await client.messages.create(
+                        model=model,
+                        max_tokens=self.max_tokens,
+                        system=self.system_prompt,
+                        tools=anthropic_tools,
+                        messages=messages,
+                    )
+                except anthropic.RateLimitError:
+                    logger.warning(
+                        "[mcp_enrichment] Rate limit hit at iteration %d — returning partial results",
+                        iteration,
+                    )
+                    break  # exit loop, return whatever we have so far
+
                 last_response = response
                 total_in += response.usage.input_tokens
                 total_out += response.usage.output_tokens

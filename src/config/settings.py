@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # ── Anthropic (local mode) ────────────────────────────────────────────────
     anthropic_api_key: str = Field(default="")
     anthropic_model: str = "claude-opus-4-6"
+    # Lighter model for MCP enrichment loop (many tool calls → higher rate limits needed)
+    anthropic_model_mcp: str = "claude-haiku-4-5-20251001"
 
     # ── Azure AI Foundry (production mode — optional) ─────────────────────────
     azure_ai_project_connection_string: str = Field(default="")
