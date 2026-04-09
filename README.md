@@ -207,6 +207,8 @@ Based on: **code quality** (SonarCloud metrics + static analysis) + **cloud coup
 
 When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs between Phase 1 and Phase 2. It calls Azure Skills to retrieve **real Azure intelligence** and injects it into the synthesis prompt — so the final report uses actual pricing, actual migration readiness scores, and real Azure Advisor recommendations instead of estimates.
 
+**Implementation**: The backend connects to MCP servers directly via SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) — no Anthropic MCP beta required. The tool-use loop uses **`claude-haiku-4-5-20251001`** (configurable via `ANTHROPIC_MODEL_MCP`) to stay within rate limits across 10–30 tool calls per analysis. Rate limit errors exit the loop gracefully and return partial results.
+
 **Azure MCP Skills called (all relevant ones per scenario):**
 
 | Category | Skills |
@@ -231,7 +233,7 @@ When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs bet
 | Wiki & Test | `wiki_list_wikis`, `wiki_get_page_content`, `testplan_list_test_plans` |
 | Search | `search_code`, `search_wiki` |
 
-> **Note on Azure DevOps Remote MCP**: The remote endpoint `https://mcp.dev.azure.com/{org}` requires Entra OAuth and currently does **not** support the Anthropic API MCP client (requires dynamic OAuth client registration). The Docker service uses the **local** `@microsoft/azure-devops-mcp` server authenticated via PAT instead.
+> **Note on Azure DevOps Remote MCP**: The remote endpoint `https://mcp.dev.azure.com/{org}` requires Entra OAuth and currently does **not** support the Anthropic API MCP client. The Docker service uses the local **`@azure-devops/mcp`** package (v2.5.0+) authenticated via PAT (`--authentication env`). On corporate networks with SSL inspection, `NODE_TLS_REJECT_UNAUTHORIZED=0` is set in the container (replace with `NODE_EXTRA_CA_CERTS` + mounted CA cert for production).
 
 ### Detailed Migration Effort
 
@@ -291,6 +293,8 @@ Open `.env` and fill in at minimum:
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...          # https://console.anthropic.com → API Keys
 ANTHROPIC_MODEL=claude-opus-4-6
+# MCP enrichment uses Haiku (lighter model, 10x higher rate limits for tool loops)
+# ANTHROPIC_MODEL_MCP=claude-haiku-4-5-20251001  # default — change only if needed
 
 # ── MongoDB ───────────────────────────────────────────────────────
 MONGO_ROOT_PASSWORD=changeme_local
@@ -529,6 +533,18 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 2. Toggle **Azure MCP** and/or **Azure DevOps MCP** to ON
 3. Start the analysis
 4. The report will include an **Azure MCP Enrichment** panel with real Azure data
+
+### 7e — Troubleshooting MCP containers
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `azmcp: not found` | Alpine musl vs glibc binary | Image uses `node:22-slim` (Debian/glibc) — rebuild |
+| `Couldn't find a valid ICU package` | .NET globalization deps missing | `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` set in Dockerfile |
+| `fetch failed` on Azure DevOps | Corporate SSL inspection proxy | `NODE_TLS_REJECT_UNAUTHORIZED=0` set in compose.yml |
+| `Not enough non-option arguments` | Missing `organization` positional arg | `AZURE_DEVOPS_ORG` must be set in `.env` |
+| `Access to this MCP server is blocked` | Anthropic MCP beta tried to reach local URL | Fixed — backend uses local SSE client, not Anthropic beta |
+| Rate limit 429 in MCP loop | Claude Opus + many tool calls | Fixed — Haiku used for MCP loop; exits gracefully on 429 |
+| `unhandled errors in a TaskGroup` | `BaseExceptionGroup` not caught by `except Exception` | Fixed — `except BaseException` with re-raise for SystemExit |
 
 ---
 
