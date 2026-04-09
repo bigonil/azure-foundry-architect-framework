@@ -22,6 +22,7 @@ This is equivalent to the MCP beta but runs entirely inside our network.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -38,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 12          # safety cap on the tool-use loop
 MAX_TOOLS_PER_SERVER = 60   # avoid context overflow
+SSE_CONNECT_RETRIES = 3     # retry SSE connection on transient disconnects
+SSE_RETRY_DELAY = 2.0       # seconds between retries
 
 
 def _slug(name: str) -> str:
@@ -133,33 +136,44 @@ class McpEnrichmentAgent(BaseAgent):
         total_in = total_out = 0
 
         async with AsyncExitStack() as stack:
-            # ── 1. Open SSE connections to all MCP servers ───────────────────
+            # ── 1. Open SSE connections to all MCP servers (with retry) ─────
             named_sessions: list[tuple[str, ClientSession]] = []
             for srv in mcp_servers:
                 url = srv.get("url", "")
                 name = srv.get("name", "mcp")
                 if not url:
                     continue
-                try:
-                    read, write = await stack.enter_async_context(sse_client(url))
-                    session = await stack.enter_async_context(ClientSession(read, write))
-                    await session.initialize()
-                    named_sessions.append((name, session))
-                    logger.info("[mcp_enrichment] Connected to '%s' at %s", name, url)
-                except BaseException as exc:
-                    if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-                        raise
-                    # BaseExceptionGroup is raised by anyio TaskGroup when the SSE
-                    # connection closes abruptly (e.g. DevOps MCP auth failure during init)
-                    exc_msg = (
-                        "; ".join(str(e) for e in exc.exceptions)  # type: ignore[attr-defined]
-                        if hasattr(exc, "exceptions")
-                        else str(exc)
-                    )
-                    logger.warning(
-                        "[mcp_enrichment] Cannot reach '%s' (%s): %s — skipping",
-                        name, url, exc_msg,
-                    )
+                connected = False
+                for attempt in range(1, SSE_CONNECT_RETRIES + 1):
+                    try:
+                        read, write = await stack.enter_async_context(sse_client(url))
+                        session = await stack.enter_async_context(ClientSession(read, write))
+                        await session.initialize()
+                        named_sessions.append((name, session))
+                        logger.info("[mcp_enrichment] Connected to '%s' at %s", name, url)
+                        connected = True
+                        break
+                    except BaseException as exc:
+                        if isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                            raise
+                        exc_msg = (
+                            "; ".join(str(e) for e in exc.exceptions)  # type: ignore[attr-defined]
+                            if hasattr(exc, "exceptions")
+                            else str(exc)
+                        )
+                        if attempt < SSE_CONNECT_RETRIES:
+                            logger.warning(
+                                "[mcp_enrichment] '%s' attempt %d/%d failed (%s) — retrying in %.0fs",
+                                name, attempt, SSE_CONNECT_RETRIES, exc_msg, SSE_RETRY_DELAY,
+                            )
+                            await asyncio.sleep(SSE_RETRY_DELAY)
+                        else:
+                            logger.warning(
+                                "[mcp_enrichment] Cannot reach '%s' (%s): %s — skipping",
+                                name, url, exc_msg,
+                            )
+                if not connected:
+                    continue
 
             if not named_sessions:
                 raise RuntimeError(
@@ -196,9 +210,37 @@ class McpEnrichmentAgent(BaseAgent):
                 len(anthropic_tools), len(named_sessions),
             )
 
-            # ── 3. Claude tool-use loop ───────────────────────────────────────
+            # ── 3. Mandatory azuremigrate pre-call ───────────────────────────
+            # Guarantee migration data even if Claude skips the tool.
+            # Find any tool whose name contains "azuremigrate".
+            azuremigrate_result: str = ""
+            for prefixed_name, (orig_name, sess) in tool_map.items():
+                if "azuremigrate" in prefixed_name.lower():
+                    logger.info("[mcp_enrichment] Pre-calling mandatory tool: %s", prefixed_name)
+                    try:
+                        mcp_result = await sess.call_tool(orig_name, {})
+                        azuremigrate_result = _extract_mcp_text(mcp_result.content)
+                        logger.info(
+                            "[mcp_enrichment] azuremigrate returned %d chars",
+                            len(azuremigrate_result),
+                        )
+                    except Exception as exc:
+                        logger.warning("[mcp_enrichment] azuremigrate pre-call failed: %s", exc)
+                    break
+
+            # ── 4. Claude tool-use loop ───────────────────────────────────────
+            azure_migrate_section = ""
+            if azuremigrate_result:
+                azure_migrate_section = (
+                    f"\n\n## Azure Migrate Data (already fetched)\n"
+                    f"The following data was retrieved from the Azure Migrate skill "
+                    f"and MUST be included in your JSON response under "
+                    f"`migration_readiness` and `azure_migrate_raw`:\n\n"
+                    f"{azuremigrate_result[:8000]}\n"
+                )
+
             messages: list[dict] = [
-                {"role": "user", "content": self.build_user_message(context)}
+                {"role": "user", "content": self.build_user_message(context) + azure_migrate_section}
             ]
 
             last_response = None
@@ -340,7 +382,8 @@ Use the available tools to gather real Azure intelligence. CALL EVERY RELEVANT T
    - observability: monitor / applicationinsights (as appropriate)
 {devops_section}
 ## Required Output
-After calling all relevant tools, return a comprehensive JSON object:
+After calling all relevant tools, return a comprehensive JSON object.
+IMPORTANT: include `azure_migrate_raw` verbatim from the Azure Migrate data already provided above.
 {{
   "migration_readiness": {{
     "overall_score": "<percentage or rating>",
@@ -348,6 +391,7 @@ After calling all relevant tools, return a comprehensive JSON object:
     "blockers": ["<blocker>"],
     "recommendations": ["<recommendation>"]
   }},
+  "azure_migrate_raw": "<full verbatim text from the Azure Migrate skill result>",
   "azure_pricing_estimate": {{
     "monthly_eur": <number>,
     "breakdown": [{{"service": "<name>", "sku": "<sku>", "monthly_eur": <number>}}],
@@ -392,8 +436,11 @@ After calling all relevant tools, return a comprehensive JSON object:
     def parse_response(self, raw_response: str) -> dict[str, Any]:
         try:
             data = json.loads(raw_response)
+            if isinstance(data, list):
+                data = {}
             return {
                 "migration_readiness": data.get("migration_readiness", {}),
+                "azure_migrate_raw": data.get("azure_migrate_raw", ""),
                 "azure_pricing_estimate": data.get("azure_pricing_estimate", {}),
                 "advisor_recommendations": data.get("advisor_recommendations", []),
                 "waf_assessment": data.get("waf_assessment", {}),
@@ -405,7 +452,7 @@ After calling all relevant tools, return a comprehensive JSON object:
                 "enrichment_quality": data.get("enrichment_quality", "unknown"),
                 "raw": data,
             }
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError, AttributeError):
             logger.warning("[mcp_enrichment] Could not parse JSON response")
             return {"raw_text": raw_response, "parse_error": True}
 

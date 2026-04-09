@@ -681,15 +681,16 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
   if (!enrichment || enrichment.status !== 'success') return null
 
   const data = enrichment.data ?? {}
-  const readiness    = data.migration_readiness ?? {}
-  const pricing      = data.azure_pricing_estimate ?? {}
-  const advisor      = (data.advisor_recommendations ?? []) as any[]
-  const waf          = data.waf_assessment ?? {}
-  const refArchs     = (data.reference_architectures ?? []) as any[]
-  const practices    = (data.best_practices ?? []) as string[]
-  const skillsCalled = (data.azure_skills_called ?? []) as string[]
-  const quality      = data.enrichment_quality ?? 'unknown'
-  const svcGuidance  = data.service_guidance as Record<string, any> ?? {}
+  const readiness      = data.migration_readiness ?? {}
+  const azMigrateRaw   = (data.azure_migrate_raw ?? '') as string
+  const pricing        = data.azure_pricing_estimate ?? {}
+  const advisor        = (data.advisor_recommendations ?? []) as any[]
+  const waf            = data.waf_assessment ?? {}
+  const refArchs       = (data.reference_architectures ?? []) as any[]
+  const practices      = (data.best_practices ?? []) as string[]
+  const skillsCalled   = (data.azure_skills_called ?? []) as string[]
+  const quality        = data.enrichment_quality ?? 'unknown'
+  const svcGuidance    = data.service_guidance as Record<string, any> ?? {}
 
   const wafPillars = ['reliability', 'security', 'cost_optimization', 'operational_excellence', 'performance_efficiency']
   const wafColors: Record<number, string> = { 5: 'text-green-400', 4: 'text-blue-400', 3: 'text-yellow-400', 2: 'text-orange-400', 1: 'text-red-400' }
@@ -735,7 +736,7 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
       )}
 
       {/* ── Azure Migrate Assessment (prominent top section) ───────────────── */}
-      {(readiness.overall_score != null || readiness.suitability || (readiness.blockers?.length ?? 0) > 0) && (
+      {(readiness.overall_score != null || readiness.suitability || (readiness.blockers?.length ?? 0) > 0 || azMigrateRaw) && (
         <div className="bg-blue-950/30 border border-blue-700/40 rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-blue-400" />
@@ -791,6 +792,18 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
                 ))}
               </ul>
             </div>
+          )}
+
+          {/* Azure Migrate raw output */}
+          {azMigrateRaw && (
+            <details className="mt-2">
+              <summary className="text-[10px] text-blue-400/70 cursor-pointer hover:text-blue-400 uppercase tracking-wider font-semibold select-none">
+                Azure Migrate raw output ▾
+              </summary>
+              <pre className="mt-2 text-[10px] text-gray-400 bg-gray-900/50 rounded p-3 overflow-auto max-h-64 leading-relaxed whitespace-pre-wrap break-words">
+                {azMigrateRaw}
+              </pre>
+            </details>
           )}
         </div>
       )}

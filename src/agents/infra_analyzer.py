@@ -115,6 +115,10 @@ Return a comprehensive InfraAnalysisReport as JSON.
     def parse_response(self, raw_response: str) -> dict[str, Any]:
         try:
             data = json.loads(raw_response)
+            # Claude occasionally returns a JSON array (e.g. just the resource list)
+            # instead of the expected object — normalise it here.
+            if isinstance(data, list):
+                data = {"resource_inventory": data}
             return {
                 "resource_inventory": data.get("resource_inventory", []),
                 "networking_topology": data.get("networking_topology", {}),
@@ -128,6 +132,6 @@ Return a comprehensive InfraAnalysisReport as JSON.
                 "critical_findings": data.get("critical_findings", []),
                 "raw": data,
             }
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, AttributeError, TypeError):
             logger.warning(f"[{self.agent_name}] Could not parse JSON response")
             return {"raw_text": raw_response, "parse_error": True}
