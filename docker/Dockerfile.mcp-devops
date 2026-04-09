@@ -25,6 +25,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD nc -z localhost 3334 || exit 1
 
 # Start azure-devops-mcp as stdio, bridge to SSE via supergateway
+# AZURE_DEVOPS_ORG must be set; --authentication env uses AZURE_DEVOPS_EXT_PAT
 CMD ["sh", "-c", \
-     "supergateway --stdio 'npx -y @azure-devops/mcp' \
+     "supergateway --stdio \"npx -y @azure-devops/mcp ${AZURE_DEVOPS_ORG} --authentication env\" \
       --port 3334 --baseUrl http://mcp-devops:3334"]

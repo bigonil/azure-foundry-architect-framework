@@ -80,6 +80,9 @@ services:
     environment:
       AZURE_DEVOPS_ORG: ${AZURE_DEVOPS_ORG:-}
       AZURE_DEVOPS_EXT_PAT: ${AZURE_DEVOPS_EXT_PAT:-}
+      # Corporate proxy/SSL inspection: Node.js doesn't include the corporate CA cert.
+      # Dev only — replace with NODE_EXTRA_CA_CERTS + mounted cert for production.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
     ports:
       - "3334:3334"
     restart: unless-stopped
