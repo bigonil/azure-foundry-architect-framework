@@ -213,6 +213,8 @@ The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK +
 
 **`azuremigrate` is always called first** (mandatory pre-call before the Claude loop). The backend invokes it directly via `sess.call_tool()` before entering the Claude tool-use loop — guaranteeing migration assessment data is captured regardless of Claude’s tool selection. The raw result is injected into Claude’s initial message and stored verbatim as `azure_migrate_raw` in the report (shown in a collapsible block in the UI). SSE connections include a **3-attempt retry with 2s backoff** to survive transient disconnects (e.g. after a uvicorn hot-reload).
 
+**Supergateway reconnect fix**: `@modelcontextprotocol/sdk`’s `Server.close()` calls `transport.close()` but never resets the internal `_transport` field — only the `onclose` event callback does, which doesn’t fire when the HTTP response is already ended. Without the fix, every second SSE connection throws `Already connected to a transport`. `Dockerfile.mcp-azure` patches `stdioToSse.js` at build time to also set `server._transport = undefined` after `close()`, making all reconnects reliable.
+
 **Azure MCP Skills called (all relevant ones per scenario):**
 
 | Category | Skills |
@@ -555,6 +557,8 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Caught gracefully with 3-attempt retry; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG`. On corporate networks, mount the CA bundle and set `NODE_EXTRA_CA_CERTS` inline in the CMD (see Dockerfile.mcp-devops) |
 | `NODE_EXTRA_CA_CERTS` wrong path in container | Claude Code `settings.json` `env` leaks host Windows path via Docker Desktop / Git Bash (backslashes stripped) | Fixed — `NODE_EXTRA_CA_CERTS` set inline in Dockerfile CMD as `sh -c "NODE_EXTRA_CA_CERTS=<container-path> supergateway ..."` |
 | `infra_analyzer: Could not parse JSON response` | Large infra response truncated (max_tokens too small) OR Claude returned JSON array instead of object | Fixed — `max_tokens` raised to 8192; `parse_response` now normalises JSON arrays to objects |
+| `synthesis: Input should be a valid dictionary, input_type=list` | Claude returns a JSON array `[...]` instead of object `{...}` for the synthesis step | Fixed — orchestrator normalises list → dict before Pydantic validation |
+| `Already connected to a transport` (supergateway crash) | `Server.close()` in `@modelcontextprotocol/sdk` calls `transport.close()` but never resets `_transport`; the `onclose` event (which does reset it) doesn't fire on an already-ended HTTP response — so every 2nd SSE connection throws | Fixed — `Dockerfile.mcp-azure` patches `stdioToSse.js` at build time to set `server._transport = undefined` after `close()` |
 | `Server disconnected without sending a response` | SSE session dropped after uvicorn hot-reload | Fixed — SSE connect retried up to 3 times with 2s backoff before giving up |
 | `SONARCLOUD_TOKEN not set — skipping SonarCloud` | Settings `lru_cache` loaded before `.env` update | Restart the backend after editing `.env`. Both `SONARCLOUD_TOKEN` and `SONARCLOUD_ORG` must be set |
 
