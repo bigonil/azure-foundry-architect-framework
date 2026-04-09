@@ -8,7 +8,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd libicu-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g supergateway@latest \
+    && npm install -g supergateway@latest @azure/mcp@latest \
     && npm cache clean --force
 
 # Required for the .NET azmcp binary shipped inside @azure/mcp
