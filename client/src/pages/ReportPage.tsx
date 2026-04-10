@@ -8,7 +8,7 @@ import {
   BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
   Download, Printer, Loader2,
 } from 'lucide-react'
-import { analysisApi, type AnalysisReport, type SessionStatus, type McpEnrichmentData, type CodeAnalyzerData, type QualityAnalyzerData } from '../services/api'
+import { analysisApi, type AnalysisReport, type SessionStatus, type McpEnrichmentData, type CodeAnalyzerData, type QualityAnalyzerData, type CodeMcpGuidance, type InfraMcpGuidance } from '../services/api'
 
 const WAF_COLORS: Record<string, string> = {
   critical: 'text-red-400 bg-red-500/10 border-red-500/30',
@@ -42,7 +42,6 @@ export default function ReportPage() {
   // Hooks must ALL be at the top — before any conditional returns
   const reportRef = useRef<HTMLDivElement>(null)
   const [generatingPdf, setGeneratingPdf] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'app' | 'infra'>('overview')
 
   // If report was passed via navigation state (demo mode), use it directly
   const preloadedReport = location.state?.report as AnalysisReport | undefined
@@ -161,7 +160,12 @@ export default function ReportPage() {
   const handlePrint = () => window.print()
 
   const synthesis = report.synthesis
-  const maturityScore = synthesis.maturity_score ?? 0
+  const rawScore = synthesis.maturity_score
+  const maturityScore = typeof rawScore === 'number' && rawScore > 0
+    ? rawScore
+    : typeof rawScore === 'string' && parseFloat(rawScore as string) > 0
+    ? parseFloat(rawScore as string)
+    : 0
 
   return (
     <div id="report-content" ref={reportRef} className="space-y-8">
@@ -255,296 +259,268 @@ export default function ReportPage() {
         <TokenCostPanel report={report} />
       )}
 
-      {/* Tab Navigation */}
-      <div className="flex gap-1 bg-gray-900 rounded-xl border border-gray-800 p-1">
-        {[
-          { id: 'overview', label: 'Overview', icon: BarChart3 },
-          { id: 'app', label: 'Application & Code', icon: Code2 },
-          { id: 'infra', label: 'Infrastructure & Azure', icon: Server },
-        ].map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id as any)}
-            className={clsx(
-              'flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center',
-              activeTab === id
-                ? 'bg-blue-600 text-white shadow'
-                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+      {/* ── Executive Summary ────────────────────────────────────────────────── */}
+      {synthesis.executive_summary && (
+        <div className="bg-blue-950/40 border border-blue-800/50 rounded-xl p-6">
+          <h2 className="text-sm font-semibold text-blue-300 uppercase tracking-wider mb-3">Executive Summary</h2>
+          <p className="text-gray-300 leading-relaxed">{synthesis.executive_summary}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-4">
+        {/* Recommended Strategy */}
+        {synthesis.recommended_strategy && (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Strategy</div>
+            <div className="text-lg font-bold text-white capitalize">
+              {synthesis.recommended_strategy.split('—')[0].trim()}
+            </div>
+            {synthesis.recommended_strategy.includes('—') && (
+              <div className="text-xs text-gray-400 mt-2 leading-relaxed">
+                {synthesis.recommended_strategy.split('—')[1].trim()}
+              </div>
             )}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
+          </div>
+        )}
+
+        {/* Duration */}
+        {synthesis.estimated_migration_duration_weeks && (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Migration Timeline</div>
+            <div className="text-3xl font-bold text-white">
+              {synthesis.estimated_migration_duration_weeks}
+              <span className="text-gray-500 text-base font-normal ml-1">weeks</span>
+            </div>
+          </div>
+        )}
+
+        {/* Savings */}
+        {synthesis.estimated_cost_savings_monthly_usd && (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Monthly Savings</div>
+            <div className="text-3xl font-bold text-green-400">
+              €{synthesis.estimated_cost_savings_monthly_usd.toLocaleString('it-IT')}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              €{(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString('it-IT')}/year
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Overview Tab ─────────────────────────────────────────────────────── */}
-      {activeTab === 'overview' && (
-        <div className="space-y-8">
-          {/* Executive Summary */}
-          {synthesis.executive_summary && (
-            <div className="bg-blue-950/40 border border-blue-800/50 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-blue-300 uppercase tracking-wider mb-3">Executive Summary</h2>
-              <p className="text-gray-300 leading-relaxed">{synthesis.executive_summary}</p>
-            </div>
-          )}
+      {/* Key Findings & Risks */}
+      <div className="grid grid-cols-2 gap-6">
+        {synthesis.key_findings && synthesis.key_findings.length > 0 && (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+            <h3 className="font-semibold text-white mb-4">Key Findings</h3>
+            <ul className="space-y-2">
+              {synthesis.key_findings.map((finding, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                  {finding}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-          <div className="grid grid-cols-3 gap-4">
-            {/* Recommended Strategy */}
-            {synthesis.recommended_strategy && (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Strategy</div>
-                <div className="text-lg font-bold text-white capitalize">
-                  {synthesis.recommended_strategy.split('—')[0].trim()}
+        {synthesis.critical_risks && synthesis.critical_risks.length > 0 && (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+            <h3 className="font-semibold text-white mb-4">Critical Risks</h3>
+            <ul className="space-y-2">
+              {synthesis.critical_risks.map((risk, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                  <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  {risk}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Top 10 Actions */}
+      {synthesis.top_10_actions && synthesis.top_10_actions.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h3 className="font-semibold text-white mb-5">Recommended Actions</h3>
+          <div className="space-y-3">
+            {synthesis.top_10_actions.map((action) => (
+              <div key={action.priority} className="flex items-start gap-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
+                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600/20 border border-blue-600/40 flex items-center justify-center text-xs font-bold text-blue-400">
+                  {action.priority}
                 </div>
-                {synthesis.recommended_strategy.includes('—') && (
-                  <div className="text-xs text-gray-400 mt-2 leading-relaxed">
-                    {synthesis.recommended_strategy.split('—')[1].trim()}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white">{action.action}</div>
+                  <div className="flex gap-3 mt-2 flex-wrap">
+                    <span className="text-xs text-gray-500">{action.owner}</span>
+                    <span className="text-xs text-gray-500">·</span>
+                    <span className="text-xs text-gray-500">{action.timeline}</span>
+                    <span className="text-xs text-gray-500">·</span>
+                    <span className="text-xs text-gray-500">{action.effort}</span>
                   </div>
+                </div>
+                <div className={clsx('w-2 h-2 rounded-full flex-shrink-0 mt-2', IMPACT_COLORS[action.impact] ?? 'bg-gray-500')} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Roadmap */}
+      {synthesis.roadmap_phases && synthesis.roadmap_phases.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h3 className="font-semibold text-white mb-5">Migration Roadmap</h3>
+          <div className="space-y-4">
+            {synthesis.roadmap_phases.map((phase, i) => (
+              <div key={phase.phase} className="relative">
+                {i < synthesis.roadmap_phases!.length - 1 && (
+                  <div className="absolute left-4 top-12 bottom-0 w-px bg-gray-700" />
                 )}
-              </div>
-            )}
-
-            {/* Duration */}
-            {synthesis.estimated_migration_duration_weeks && (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Migration Timeline</div>
-                <div className="text-3xl font-bold text-white">
-                  {synthesis.estimated_migration_duration_weeks}
-                  <span className="text-gray-500 text-base font-normal ml-1">weeks</span>
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
+                    {phase.phase}
+                  </div>
+                  <div className="flex-1 pb-6">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-white">{phase.name}</span>
+                      <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{phase.duration_weeks}w</span>
+                    </div>
+                    <ul className="mt-2 space-y-1">
+                      {phase.objectives?.map((obj, j) => (
+                        <li key={j} className="text-sm text-gray-400 flex items-start gap-2">
+                          <ChevronRight className="w-3 h-3 mt-1 flex-shrink-0" />
+                          {obj}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </div>
-            )}
-
-            {/* Savings */}
-            {synthesis.estimated_cost_savings_monthly_usd && (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Monthly Savings</div>
-                <div className="text-3xl font-bold text-green-400">
-                  €{synthesis.estimated_cost_savings_monthly_usd.toLocaleString('it-IT')}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  €{(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString('it-IT')}/year
-                </div>
-              </div>
-            )}
+            ))}
           </div>
+        </div>
+      )}
 
-          {/* Key Findings & Risks */}
-          <div className="grid grid-cols-2 gap-6">
-            {synthesis.key_findings && synthesis.key_findings.length > 0 && (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-                <h3 className="font-semibold text-white mb-4">Key Findings</h3>
-                <ul className="space-y-2">
-                  {synthesis.key_findings.map((finding, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                      <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                      {finding}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+      {/* Migration Effort Detail */}
+      {synthesis.effort_detail && (
+        <EffortDetailSection effort={synthesis.effort_detail as EffortDetail} />
+      )}
 
-            {synthesis.critical_risks && synthesis.critical_risks.length > 0 && (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-                <h3 className="font-semibold text-white mb-4">Critical Risks</h3>
-                <ul className="space-y-2">
-                  {synthesis.critical_risks.map((risk, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                      <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                      {risk}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+      {/* ── Application & Code ───────────────────────────────────────────────── */}
+      <AppAnalysisPanel report={report} />
+
+      {/* SonarCloud Static Analysis */}
+      <SonarCloudSection data={report.sonarqube_analysis} />
+
+      {/* Dev-focused actions */}
+      {(() => {
+        const devActions = (synthesis.top_10_actions ?? []).filter(
+          a => a.owner === 'dev_team' || a.owner === 'security_team'
+        )
+        if (!devActions.length) return null
+        return (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="w-4 h-4 text-blue-400" />
+              <h3 className="font-semibold text-white">Development Team Actions</h3>
+              <span className="text-xs text-gray-500">{devActions.length} actions</span>
+            </div>
+            <div className="space-y-2">
+              {devActions.map((action, i) => (
+                <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
+                  <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white mb-1">{action.action}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+                      )}>{action.impact}</span>
+                      <span className="text-[10px] text-gray-500">{action.timeline}</span>
+                      <span className="text-[10px] text-gray-500">{action.effort}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+        )
+      })()}
 
-          {/* Top 10 Actions */}
-          {synthesis.top_10_actions && synthesis.top_10_actions.length > 0 && (
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-              <h3 className="font-semibold text-white mb-5">Recommended Actions</h3>
-              <div className="space-y-3">
-                {synthesis.top_10_actions.map((action) => (
-                  <div key={action.priority} className="flex items-start gap-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600/20 border border-blue-600/40 flex items-center justify-center text-xs font-bold text-blue-400">
-                      {action.priority}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-white">{action.action}</div>
-                      <div className="flex gap-3 mt-2 flex-wrap">
-                        <span className="text-xs text-gray-500">{action.owner}</span>
-                        <span className="text-xs text-gray-500">·</span>
-                        <span className="text-xs text-gray-500">{action.timeline}</span>
-                        <span className="text-xs text-gray-500">·</span>
-                        <span className="text-xs text-gray-500">{action.effort}</span>
-                      </div>
-                    </div>
-                    <div className={clsx('w-2 h-2 rounded-full flex-shrink-0 mt-2', IMPACT_COLORS[action.impact] ?? 'bg-gray-500')} />
+      {/* ── Infrastructure Recommendations from synthesis ────────────────────── */}
+      {(synthesis.infra_recommendations?.length ?? 0) > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Server className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Infrastructure Recommendations</h3>
+          </div>
+          <div className="space-y-2">
+            {synthesis.infra_recommendations!.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                    rec.priority === 'critical' ? 'text-red-400 bg-red-500/10'
+                      : rec.priority === 'high' ? 'text-orange-400 bg-orange-500/10'
+                      : rec.priority === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                      : 'text-green-400 bg-green-500/10'
+                  )}>{rec.priority ?? 'info'}</span>
+                  <div className="flex-1">
+                    {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category.replace(/_/g, ' ')}</div>}
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                    {rec.effort && <div className="text-[10px] text-blue-400/60 mt-0.5">{rec.effort}</div>}
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Roadmap */}
-          {synthesis.roadmap_phases && synthesis.roadmap_phases.length > 0 && (
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-              <h3 className="font-semibold text-white mb-5">Migration Roadmap</h3>
-              <div className="space-y-4">
-                {synthesis.roadmap_phases.map((phase, i) => (
-                  <div key={phase.phase} className="relative">
-                    {i < synthesis.roadmap_phases!.length - 1 && (
-                      <div className="absolute left-4 top-12 bottom-0 w-px bg-gray-700" />
-                    )}
-                    <div className="flex gap-4">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
-                        {phase.phase}
-                      </div>
-                      <div className="flex-1 pb-6">
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium text-white">{phase.name}</span>
-                          <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{phase.duration_weeks}w</span>
-                        </div>
-                        <ul className="mt-2 space-y-1">
-                          {phase.objectives?.map((obj, j) => (
-                            <li key={j} className="text-sm text-gray-400 flex items-start gap-2">
-                              <ChevronRight className="w-3 h-3 mt-1 flex-shrink-0" />
-                              {obj}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Migration Effort Detail */}
-          {synthesis.effort_detail && (
-            <EffortDetailSection effort={synthesis.effort_detail as EffortDetail} />
-          )}
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ── Application & Code Tab ───────────────────────────────────────────── */}
-      {activeTab === 'app' && (
-        <div className="space-y-6">
-          <AppAnalysisPanel report={report} />
+      {/* ── Azure MCP Infrastructure Guidance (Opzione B — infra_analyzer) ─── */}
+      {(() => {
+        const infraResult = report.agent_results?.infra_analyzer
+        const infraData = (infraResult?.data ?? {}) as Record<string, unknown>
+        const infraMcp = infraData.mcp_infra_guidance as InfraMcpGuidance | undefined
+        if (!infraMcp || (infraMcp.azure_guidelines?.length ?? 0) === 0) return null
+        return <InfraMcpGuidancePanel guidance={infraMcp} />
+      })()}
 
-          {/* SonarCloud Static Analysis */}
-          <SonarCloudSection data={report.sonarqube_analysis} />
+      {/* ── Azure MCP Enrichment ────────────────────────────────────────────── */}
+      <McpEnrichmentPanel report={report} />
 
-          {/* Dev-focused actions */}
-          {(() => {
-            const devActions = (synthesis.top_10_actions ?? []).filter(
-              a => a.owner === 'dev_team' || a.owner === 'security_team'
-            )
-            if (!devActions.length) return null
-            return (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Users className="w-4 h-4 text-blue-400" />
-                  <h3 className="font-semibold text-white">Development Team Actions</h3>
-                  <span className="text-xs text-gray-500">{devActions.length} actions</span>
-                </div>
-                <div className="space-y-2">
-                  {devActions.map((action, i) => (
-                    <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
-                      <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-white mb-1">{action.action}</div>
-                        <div className="flex flex-wrap gap-2">
-                          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
-                            action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
-                          )}>{action.impact}</span>
-                          <span className="text-[10px] text-gray-500">{action.timeline}</span>
-                          <span className="text-[10px] text-gray-500">{action.effort}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-      )}
-
-      {/* ── Infrastructure & Azure Tab ───────────────────────────────────────── */}
-      {activeTab === 'infra' && (
-        <div className="space-y-6">
-          {/* Infra recommendations from synthesis */}
-          {(synthesis.infra_recommendations?.length ?? 0) > 0 && (
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
-              <div className="flex items-center gap-2">
-                <Server className="w-4 h-4 text-blue-400" />
-                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Infrastructure Recommendations</h3>
-              </div>
-              <div className="space-y-2">
-                {synthesis.infra_recommendations!.map((rec, i) => (
-                  <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
-                    <div className="flex items-start gap-2">
-                      <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
-                        rec.priority === 'critical' ? 'text-red-400 bg-red-500/10'
-                          : rec.priority === 'high' ? 'text-orange-400 bg-orange-500/10'
-                          : rec.priority === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
-                          : 'text-green-400 bg-green-500/10'
-                      )}>{rec.priority ?? 'info'}</span>
-                      <div className="flex-1">
-                        {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category.replace(/_/g, ' ')}</div>}
-                        <div className="text-xs text-gray-300">{rec.recommendation}</div>
-                        {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
-                        {rec.effort && <div className="text-[10px] text-blue-400/60 mt-0.5">{rec.effort}</div>}
-                      </div>
+      {/* Cloud team actions */}
+      {(() => {
+        const cloudActions = (synthesis.top_10_actions ?? []).filter(
+          a => a.owner === 'cloud_team'
+        )
+        if (!cloudActions.length) return null
+        return (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Server className="w-4 h-4 text-blue-400" />
+              <h3 className="font-semibold text-white">Cloud Team Actions</h3>
+              <span className="text-xs text-gray-500">{cloudActions.length} actions</span>
+            </div>
+            <div className="space-y-2">
+              {cloudActions.map((action, i) => (
+                <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
+                  <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white mb-1">{action.action}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+                      )}>{action.impact}</span>
+                      <span className="text-[10px] text-gray-500">{action.timeline}</span>
+                      <span className="text-[10px] text-gray-500">{action.effort}</span>
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          )}
-
-          {/* MCP Enrichment panel */}
-          <McpEnrichmentPanel report={report} />
-
-          {/* Cloud team actions */}
-          {(() => {
-            const cloudActions = (synthesis.top_10_actions ?? []).filter(
-              a => a.owner === 'cloud_team'
-            )
-            if (!cloudActions.length) return null
-            return (
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Server className="w-4 h-4 text-blue-400" />
-                  <h3 className="font-semibold text-white">Cloud Team Actions</h3>
-                  <span className="text-xs text-gray-500">{cloudActions.length} actions</span>
-                </div>
-                <div className="space-y-2">
-                  {cloudActions.map((action, i) => (
-                    <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
-                      <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-white mb-1">{action.action}</div>
-                        <div className="flex flex-wrap gap-2">
-                          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
-                            action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
-                          )}>{action.impact}</span>
-                          <span className="text-[10px] text-gray-500">{action.timeline}</span>
-                          <span className="text-[10px] text-gray-500">{action.effort}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-      )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -767,6 +743,130 @@ function EffortDetailSection({ effort }: { effort: EffortDetail }) {
   )
 }
 
+// -- Azure MCP Code Guidance panel (Opzione B — code_analyzer) ---------------
+
+function CodeMcpGuidancePanel({ guidance }: { guidance: CodeMcpGuidance }) {
+  const guidelines = guidance.azure_guidelines ?? []
+  const frameworkGuidance = guidance.framework_guidance ?? {}
+  const quickWins = guidance.quick_wins ?? []
+  const toolsCalled = guidance.tools_called ?? []
+  const priorityColors: Record<string, string> = {
+    high: 'text-red-400 bg-red-500/10',
+    medium: 'text-yellow-400 bg-yellow-500/10',
+    low: 'text-green-400 bg-green-500/10',
+  }
+  return (
+    <div className="bg-gray-900 rounded-xl border border-blue-700/30 p-5 space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Zap className="w-4 h-4 text-blue-400" />
+        <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Azure App Guidelines</h3>
+        <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">via Azure MCP</span>
+        {toolsCalled.length > 0 && (
+          <div className="flex flex-wrap gap-1 ml-auto">
+            {toolsCalled.map(t => <span key={t} className="text-[10px] font-mono text-blue-300/60 bg-blue-900/20 border border-blue-800/30 px-1.5 py-0.5 rounded">{t}</span>)}
+          </div>
+        )}
+      </div>
+      {guidelines.length > 0 && (
+        <div className="space-y-1.5">
+          {guidelines.map((g, i) => (
+            <div key={i} className="flex items-start gap-2 bg-gray-800/50 rounded px-3 py-2">
+              <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0', priorityColors[g.priority ?? 'low'] ?? 'text-gray-400 bg-gray-700')}>{g.priority ?? '—'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-gray-500 uppercase font-semibold mb-0.5">{g.area}</div>
+                <div className="text-xs text-gray-300">{g.guideline}</div>
+                {g.standard && <span className="text-[10px] text-blue-400/50 italic mt-0.5 inline-block">{g.standard}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {Object.keys(frameworkGuidance).length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Framework Migration Notes</div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(frameworkGuidance).map(([fw, note]) => (
+              <div key={fw} className="bg-gray-800/40 rounded p-2.5">
+                <div className="text-[10px] text-blue-300/70 font-semibold mb-1">{fw}</div>
+                <div className="text-[10px] text-gray-400 leading-snug">{note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {quickWins.length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-green-400 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1"><Zap className="w-3 h-3" /> Quick Wins (&lt;1 week)</div>
+          {quickWins.map((w, i) => <div key={i} className="text-[10px] text-green-300/70 flex gap-1.5"><span>✓</span>{w}</div>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Azure MCP Infra Guidance panel (Opzione B — infra_analyzer) --------------
+
+function InfraMcpGuidancePanel({ guidance }: { guidance: InfraMcpGuidance }) {
+  const guidelines = guidance.azure_guidelines ?? []
+  const svcGuidance = guidance.service_guidance ?? {}
+  const iacBestPractices = guidance.iac_best_practices ?? []
+  const toolsCalled = guidance.tools_called ?? []
+  const priorityColors: Record<string, string> = {
+    high: 'text-red-400 bg-red-500/10',
+    medium: 'text-yellow-400 bg-yellow-500/10',
+    low: 'text-green-400 bg-green-500/10',
+  }
+  return (
+    <div className="bg-gray-900 rounded-xl border border-purple-700/30 p-5 space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Server className="w-4 h-4 text-purple-400" />
+        <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Azure Infrastructure Guidelines</h3>
+        <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">via Azure MCP</span>
+        {toolsCalled.length > 0 && (
+          <div className="flex flex-wrap gap-1 ml-auto">
+            {toolsCalled.map(t => <span key={t} className="text-[10px] font-mono text-purple-300/60 bg-purple-900/20 border border-purple-800/30 px-1.5 py-0.5 rounded">{t}</span>)}
+          </div>
+        )}
+      </div>
+      {guidelines.length > 0 && (
+        <div className="space-y-1.5">
+          {guidelines.map((g, i) => (
+            <div key={i} className="flex items-start gap-2 bg-gray-800/50 rounded px-3 py-2">
+              <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0', priorityColors[g.priority ?? 'low'] ?? 'text-gray-400 bg-gray-700')}>{g.priority ?? '—'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-gray-500 uppercase font-semibold mb-0.5">{g.area}</div>
+                <div className="text-xs text-gray-300">{g.guideline}</div>
+                {g.standard && <span className="text-[10px] text-purple-400/50 italic mt-0.5 inline-block">{g.standard}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {Object.keys(svcGuidance).length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Per-Service Azure Notes</div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(svcGuidance).map(([svc, note]) => (
+              <div key={svc} className="bg-gray-800/40 rounded p-2.5">
+                <div className="text-[10px] text-purple-300/70 font-semibold mb-1">{svc}</div>
+                <div className="text-[10px] text-gray-400 leading-snug">{note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {iacBestPractices.length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">IaC Best Practices</div>
+          {iacBestPractices.map((p, i) => (
+            <div key={i} className="text-[10px] text-gray-400 flex gap-1.5"><CheckCircle2 className="w-3 h-3 text-purple-400/60 shrink-0 mt-0.5" />{p}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // -- SonarCloud section component ---------------------------------------------
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -817,7 +917,33 @@ function MetricTile({ label, value, unit, color }: {
 
 function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
   const enrichment = report.agent_results?.mcp_enrichment
-  if (!enrichment || enrichment.status !== 'success') return null
+  if (!enrichment) return null
+
+  // Show a status banner when the agent didn't succeed
+  if (enrichment.status !== 'success') {
+    return (
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="w-4 h-4 text-gray-500" />
+          <span className="font-semibold text-gray-400">Azure MCP Enrichment</span>
+          <span className={clsx(
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider border',
+            enrichment.status === 'failed'
+              ? 'text-red-400 bg-red-500/10 border-red-500/30'
+              : 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+          )}>
+            {enrichment.status}
+          </span>
+        </div>
+        {enrichment.error && (
+          <div className="text-xs text-red-400/70 mt-1">{enrichment.error}</div>
+        )}
+        <div className="text-xs text-gray-600 mt-1">
+          Enable an Azure MCP server and run a new analysis to get live Azure data.
+        </div>
+      </div>
+    )
+  }
 
   const data = (enrichment.data ?? {}) as McpEnrichmentData
   const readiness    = data.migration_readiness ?? {}
@@ -1607,6 +1733,102 @@ function AppAnalysisPanel({ report }: { report: AnalysisReport }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* 12-Factor App Compliance */}
+      {(code.twelve_factor?.length ?? 0) > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">12-Factor App Compliance</h3>
+            <span className="text-xs text-gray-500">
+              {code.twelve_factor!.filter(f => f.status === 'PASS').length}/{code.twelve_factor!.length} passed
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {code.twelve_factor!.map((f, i) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800/40 rounded px-2.5 py-2">
+                <span className={clsx('text-[10px] font-bold shrink-0 mt-0.5 w-8',
+                  f.status === 'PASS'    ? 'text-green-400'
+                  : f.status === 'PARTIAL' ? 'text-yellow-400'
+                  : f.status === 'FAIL'    ? 'text-red-400'
+                  : 'text-gray-500'
+                )}>{f.status}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-300 font-medium leading-snug">{f.factor}</div>
+                  {f.notes && <div className="text-[10px] text-gray-600 mt-0.5 leading-snug">{f.notes}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* OWASP Top 10 */}
+      {(code.owasp_findings?.length ?? 0) > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-red-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">OWASP Top 10 — 2021</h3>
+            <span className="text-xs text-red-400/70">
+              {code.owasp_findings!.filter(f => f.status === 'FOUND').length} found
+            </span>
+          </div>
+          <div className="space-y-1">
+            {code.owasp_findings!.map((f, i) => (
+              <div key={i} className={clsx(
+                'flex items-start gap-2 rounded px-2.5 py-2',
+                f.status === 'FOUND' ? 'bg-red-900/20 border border-red-800/30'
+                : f.status === 'RISK' ? 'bg-yellow-900/10 border border-yellow-800/20'
+                : 'bg-gray-800/30'
+              )}>
+                <span className="text-[10px] font-mono text-gray-500 shrink-0 mt-0.5 w-7">{f.code}</span>
+                <span className={clsx('text-[10px] font-bold shrink-0 mt-0.5 w-12',
+                  f.status === 'FOUND' ? 'text-red-400'
+                  : f.status === 'RISK'  ? 'text-yellow-400'
+                  : f.status === 'CLEAN' ? 'text-green-400'
+                  : 'text-gray-500'
+                )}>{f.status}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-300 font-medium">{f.category}</div>
+                  {f.details && <div className="text-[10px] text-gray-500 mt-0.5 leading-snug">{f.details}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SOLID Principles */}
+      {code.solid_assessment && Object.keys(code.solid_assessment).length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">SOLID Principles</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5">
+            {Object.values(code.solid_assessment).map((item, i) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800/40 rounded px-2.5 py-2">
+                <span className="text-sm font-black text-purple-400/70 shrink-0 w-5">{item.letter}</span>
+                <span className={clsx('text-[10px] font-bold shrink-0 mt-0.5 w-16',
+                  item.status === 'APPLIED'  ? 'text-green-400'
+                  : item.status === 'PARTIAL'  ? 'text-yellow-400'
+                  : item.status === 'VIOLATED' ? 'text-red-400'
+                  : 'text-gray-500'
+                )}>{item.status}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-300 font-medium">{item.principle}</div>
+                  {item.notes && <div className="text-[10px] text-gray-500 mt-0.5">{item.notes}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Azure MCP Code Guidance (Opzione B) */}
+      {code.mcp_guidance && (code.mcp_guidance.azure_guidelines?.length ?? 0) > 0 && (
+        <CodeMcpGuidancePanel guidance={code.mcp_guidance} />
       )}
 
       {/* Quality Analyzer Results */}

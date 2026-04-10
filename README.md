@@ -95,8 +95,8 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 
 | Agent | Phase | Role | Key Outputs |
 |---|---|---|---|
-| `code_analyzer` | 1 | App code + SonarCloud | Language inventory, cloud coupling, tech debt, quality gate |
-| `infra_analyzer` | 1 | IaC analysis | Resource inventory, networking, security posture, service mapping |
+| `code_analyzer` | 1 | App code + SonarCloud + MCP | Language inventory, cloud coupling, tech debt, quality gate, OWASP Top 10, SOLID, 12-Factor, `mcp_guidance` (Azure App guidelines via MCP) |
+| `infra_analyzer` | 1 | IaC analysis + MCP | Resource inventory, networking, security posture, WAF 5 pillars, CIS Benchmark, CAF, `mcp_infra_guidance` (Azure Infra guidelines via MCP) |
 | `mcp_enrichment` | 1.5 | Azure Skills enrichment | Migration readiness, real pricing, Advisor recs, WAF, reference archs |
 | `cost_optimizer` | 2 | FinOps | Savings, reserved instance ROI, right-sizing |
 | `migration_planner` | 2 | CAF migration | 6Rs strategy, wave plan, effort detail, risk register |
@@ -104,6 +104,7 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 | `waf_reviewer` | 2 | WAF review | 5-pillar scoring with recommendations |
 | `quality_analyzer` | 2 | Quality gate | SonarQube-level code & IaC analysis |
 
+> **Phase 1** agents (`code_analyzer`, `infra_analyzer`) now run in two sub-steps: (A) Claude static analysis with embedded best-practice guidelines, then (B) targeted Azure MCP enrichment if MCP servers are active.
 > **Phase 1.5** runs only when at least one Azure MCP server is active. Failures are non-fatal — the pipeline continues without enrichment data.
 
 ---
@@ -116,8 +117,9 @@ azure-foundry-architect-framework/
 │   ├── agents/
 │   │   ├── base_agent.py             # Abstract base — standard messages API only (no MCP beta)
 │   │   ├── orchestrator.py           # Phases 1→1.5→2→3, _build_mcp_servers, token aggregation
-│   │   ├── code_analyzer.py          # + SonarCloud enrichment
-│   │   ├── infra_analyzer.py
+│   │   ├── code_analyzer.py          # Opzione A (OWASP/SOLID/12-Factor) + Opzione B (MCP)
+│   │   ├── infra_analyzer.py         # Opzione A (CIS/WAF/CAF) + Opzione B (MCP)
+│   │   ├── mcp_helpers.py            # Shared: targeted_mcp_call + synthesize_mcp_guidance
 │   │   ├── mcp_enrichment_agent.py   # Phase 1.5 — Azure Skills via MCP
 │   │   ├── cost_optimizer.py
 │   │   ├── migration_planner.py      # + effort_detail (person-days, roles, waves, EUR cost)
@@ -152,8 +154,13 @@ azure-foundry-architect-framework/
 │       ├── pages/
 │       │   ├── HomePage.tsx          # + MCP Enrichment in agent list
 │       │   ├── AnalysisPage.tsx      # Pre-configured Azure MCP toggles + custom servers
-│       │   └── ReportPage.tsx        # McpEnrichmentPanel + TokenCostPanel + EffortDetail
-│       └── services/api.ts           # McpServerConfig + preconfigured/authorization_token
+│       │   └── ReportPage.tsx        # Single-scroll: Exec Summary → Strategy → Findings →
+│       │                             #   Actions → Roadmap → Effort → App Analysis
+│       │                             #   (12-Factor/OWASP/SOLID/CodeMcpGuidancePanel) →
+│       │                             #   SonarCloud → Dev Actions → Infra Recs →
+│       │                             #   InfraMcpGuidancePanel → McpEnrichmentPanel → Cloud Actions
+│       └── services/api.ts           # McpServerConfig + TwelveFactorItem + OwaspFinding +
+│                                     # SolidItem + CodeMcpGuidance + InfraMcpGuidance
 ├── docker/
 │   ├── Dockerfile.api
 │   ├── Dockerfile.client
@@ -203,11 +210,39 @@ Displayed in the report header. Computed by Claude during synthesis (Phase 3), s
 
 Based on: **code quality** (SonarCloud metrics + static analysis) + **cloud coupling score** (how tightly the code is bound to the source provider) + **infrastructure complexity** (resource count, service dependencies).
 
-### MCP Enrichment — Phase 1.5
+### MCP Enrichment — Phase 1 (Opzione A + B) and Phase 1.5
+
+MCP intelligence is applied at two levels:
+
+#### Opzione A — Embedded best-practice guidelines (always active, no MCP required)
+
+The **code_analyzer** and **infra_analyzer** Claude prompts include industry standards directly:
+
+| Agent | Standards embedded in prompt |
+|---|---|
+| `code_analyzer` | OWASP Top 10 (2021, A01–A10), SOLID principles (S/O/L/I/D), 12-Factor App (all 12), CNCF Cloud-Native Readiness |
+| `infra_analyzer` | CIS Azure Foundations Benchmark (6 categories), Azure Well-Architected Framework (5 pillars, scored 1–5), Azure Cloud Adoption Framework (6 Landing Zone design areas) |
+
+Both agents produce structured output with explicit fields: `owasp_findings`, `solid_assessment`, `twelve_factor`, `waf_assessment`, `caf_assessment`, `cis_findings`.
+
+#### Opzione B — Live Azure MCP guidance (Phase 1, conditional on active MCP servers)
+
+After Opzione A static analysis, **Phase 1 agents call targeted Azure MCP tools** to enrich results with live Azure intelligence. The MCP output **adds to** (never replaces) Opzione A results.
+
+| Agent | MCP tools called | Output field |
+|---|---|---|
+| `code_analyzer` | `get_azure_bestpractices`, `cloudarchitect` + arch-specific (`containerapps`, `appservice`, `functionapp`) | `mcp_guidance` |
+| `infra_analyzer` | `wellarchitectedframework`, `get_azure_bestpractices` + IaC-specific (`azureterraformbestpractices`, `bicepschema`) + up to 4 service-specific tools | `mcp_infra_guidance` |
+
+Both use the shared `mcp_helpers.py` helpers: `targeted_mcp_call` (opens SSE, calls patterns) + `synthesize_mcp_guidance` (single Haiku call to structure raw results).
+
+The cache key discriminates MCP vs non-MCP runs via `has_mcp: bool` — enriched results are never served from a non-MCP cache entry.
+
+#### Phase 1.5 — Full Azure Skills enrichment
 
 When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs between Phase 1 and Phase 2. It calls Azure Skills to retrieve **real Azure intelligence** and injects it into the synthesis prompt — so the final report uses actual pricing, actual migration readiness scores, and real Azure Advisor recommendations instead of estimates.
 
-**Implementation**: Only `McpEnrichmentAgent` (Phase 1.5) interacts with MCP. All other agents (Phase 1 and Phase 2) use the standard Anthropic messages API and receive MCP enrichment data already injected into their context. This avoids the Anthropic MCP beta limitation where server URLs must be publicly reachable from Anthropic's cloud.
+**Implementation**: Phase 1 agents connect to MCP via `mcp_helpers.targeted_mcp_call`. `McpEnrichmentAgent` (Phase 1.5) uses a full Claude tool-use loop. Both approaches use local SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) — not the Anthropic MCP beta — to avoid the constraint that server URLs must be publicly reachable from Anthropic's cloud.
 
 The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) and uses **`claude-haiku-4-5-20251001`** (configurable via `ANTHROPIC_MODEL_MCP`) to stay within rate limits across 10–30 tool calls per analysis. Rate limit errors exit the loop gracefully and return partial results.
 
@@ -427,36 +462,32 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ### Report page outputs
 
-The report is organized in **three tabs**:
+The report is a **single scrollable page** — all sections render in sequence:
 
-#### Tab 1 — Overview
-| Section | Content |
-|---|---|
-| Agent Status Bar | Each agent status, duration, token usage (always visible) |
-| **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown (always visible) |
-| Executive Summary | C-level summary with EUR values |
-| Strategy / Timeline / Savings | 6R strategy, weeks, monthly savings |
-| Key Findings & Risks | Agent-derived findings and critical risks |
-| Recommended Actions | Top 10 actions with owner, timeline, effort, impact |
-| Migration Roadmap | Phase-by-phase with objectives and milestones |
-| **Migration Effort Detail** | Person-days, hours, team allocation (roles + EUR rates), wave breakdown |
-
-#### Tab 2 — Application & Code
-| Section | Content |
-|---|---|
-| **Code Analysis** | Technology inventory (languages, frameworks, build tools), cloud coupling score, cloud SDKs detected, architecture patterns, containerization readiness, technical debt (days + severity), migration impact on codebase |
-| **Code Quality** | Quality gate, reliability/security/maintainability ratings (A–E), bugs/vulnerabilities/code smells/hotspots, quality recommendations |
-| **Application Recommendations** | 6–10 dev-focused items from synthesis: code quality, refactoring, security (OWASP), 12-factor, CNCF patterns — each with category, priority, effort, standard reference |
-| **Application Migration Checklist** | 8–15 concrete code changes required for Azure migration (required/recommended/optional): SDK swaps, connection string updates, auth changes, CI/CD updates |
-| SonarCloud Analysis | Quality gate, ratings (A–E), metrics, top issues |
-| Dev/Security team actions | Top 10 actions filtered by `owner: dev_team` or `security_team` |
-
-#### Tab 3 — Infrastructure & Azure
-| Section | Content |
-|---|---|
-| **Infrastructure Recommendations** | 6–10 items from synthesis: networking, IaC quality, scalability, resilience, cost, monitoring — with priority, rationale, effort |
-| **Azure MCP Enrichment** | Full enrichment panel (see MCP output table above): service mapping, pricing, WAF, migration path, advisor, reference architectures, per-service guidance |
-| Cloud team actions | Top 10 actions filtered by `owner: cloud_team` |
+| # | Section | Content |
+|---|---|---|
+| 1 | Agent Status Bar | Each agent status, duration, token usage |
+| 2 | **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown |
+| 3 | Executive Summary | C-level summary with EUR values |
+| 4 | Strategy / Timeline / Savings | 6R strategy, weeks, monthly savings |
+| 5 | Key Findings & Critical Risks | Agent-derived findings and critical risks |
+| 6 | Recommended Actions | Top 10 actions with owner, timeline, effort, impact |
+| 7 | Migration Roadmap | Phase-by-phase with objectives and milestones |
+| 8 | **Migration Effort Detail** | Person-days, hours, team allocation (roles + EUR rates), wave breakdown |
+| 9 | **Code Analysis** | Technology inventory, cloud coupling, architecture, containerization readiness, technical debt |
+| 10 | **12-Factor Compliance** | All 12 factors with PASS/PARTIAL/FAIL status and notes |
+| 11 | **OWASP Top 10** | A01–A10 with FOUND/RISK/CLEAN/N/A status and details |
+| 12 | **SOLID Assessment** | S/O/L/I/D with APPLIED/PARTIAL/VIOLATED/N/A and notes |
+| 13 | **Azure App Guidelines** *(MCP)* | `mcp_guidance`: Azure-specific code guidelines, framework guidance, quick wins (blue panel, via MCP) |
+| 14 | **Code Quality** | Quality gate, ratings (A–E), bugs/vulnerabilities/smells/hotspots |
+| 15 | **App Recommendations** | Synthesis dev-focused recommendations (OWASP, 12-factor, CNCF, refactoring) |
+| 16 | **App Migration Checklist** | Concrete code changes for Azure migration (SDK swaps, config, auth, CI/CD) |
+| 17 | SonarCloud Analysis | Quality gate, ratings, metrics, top issues |
+| 18 | Dev/Security team actions | Top 10 actions filtered by `owner: dev_team` or `security_team` |
+| 19 | **Infrastructure Recommendations** | Synthesis infra items: networking, IaC, scalability, resilience, cost, monitoring |
+| 20 | **Azure Infra Guidelines** *(MCP)* | `mcp_infra_guidance`: IaC best practices, service-specific guidance, Azure guidelines (purple panel, via MCP) |
+| 21 | **Azure MCP Enrichment** | Full Phase 1.5 enrichment: service mapping, pricing, WAF, migration path, advisor, reference architectures |
+| 22 | Cloud team actions | Top 10 actions filtered by `owner: cloud_team` |
 
 ---
 

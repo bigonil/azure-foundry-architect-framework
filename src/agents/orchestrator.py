@@ -192,9 +192,12 @@ Return the orchestration plan as JSON.
         agent_ttl = self.settings.cache_agent_ttl_hours * 3600
 
         # ── Phase 1: Sequential analysis ──────────────────────────────────────
-        logger.info("[Orchestrator] Phase 1: Running %s", phase1_agents)
+        # active_mcp is passed to Phase 1 agents so code_analyzer and infra_analyzer
+        # can enrich their results with targeted Azure MCP calls (Opzione B).
+        # Cache keys include mcp presence so MCP-enriched and non-MCP results are stored separately.
+        logger.info("[Orchestrator] Phase 1: Running %s (MCP servers: %d)", phase1_agents, len(active_mcp))
         for agent_name in phase1_agents:
-            akey = agent_cache_key(agent_name, context)
+            akey = agent_cache_key(agent_name, context, has_mcp=bool(active_mcp))
             cached_data = await cache_get(akey)
             if cached_data:
                 logger.info("[Orchestrator] Agent cache HIT: %s", agent_name)
@@ -210,7 +213,9 @@ Return the orchestration plan as JSON.
             else:
                 agent = AGENT_REGISTRY[agent_name](use_foundry_mode=self.use_foundry_mode)
                 result = await agent.run(
-                    context, session_id=request.session_id
+                    context,
+                    session_id=request.session_id,
+                    mcp_servers=active_mcp if active_mcp else None,
                 )
                 if result.status == "success":
                     await cache_set(akey, result.to_dict(), agent_ttl)
@@ -461,7 +466,7 @@ IMPORTANT CALCULATION GUIDELINES:
 Produce a JSON report with:
 {{
   "executive_summary": "<3-5 sentence summary for C-level audience, monetary values in EUR>",
-  "maturity_score": <1.0-5.0, derived from code quality, coupling score, infra complexity>,
+  "maturity_score": <REQUIRED JSON number (float) 1.0–5.0; NEVER 0, null, or a string. Derived from code quality, coupling score, infra complexity. Default 2.5 if uncertain.>,
   "key_findings": ["<specific finding from agent data>", ...],
   "critical_risks": ["<specific risk identified by agents>", ...],
   "recommended_strategy": "<rehost|replatform|refactor|hybrid — with rationale based on coupling score and complexity>",

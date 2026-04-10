@@ -76,13 +76,19 @@ def report_cache_key(request_dict: dict) -> str:
     return f"report:{_sha256(fingerprint)}"
 
 
-def agent_cache_key(agent_name: str, context: dict) -> str:
-    """Deterministic fingerprint for a single agent's inputs."""
+def agent_cache_key(agent_name: str, context: dict, has_mcp: bool = False) -> str:
+    """Deterministic fingerprint for a single agent's inputs.
+
+    ``has_mcp`` differentiates cache entries produced with vs without active MCP
+    servers — Phase 1 agents (code_analyzer, infra_analyzer) produce richer output
+    when MCP is active, so they must not share cache entries with non-MCP runs.
+    """
     fingerprint = {
         "agent": agent_name,
         "source_cloud": context.get("source_cloud", ""),
         "target_cloud": context.get("target_cloud", ""),
         "additional_context": (context.get("additional_context") or "").strip(),
+        "has_mcp": has_mcp,
         "code_artifacts": sorted(
             [(a["filename"], a["content"]) for a in context.get("code_artifacts", [])],
             key=lambda t: t[0],

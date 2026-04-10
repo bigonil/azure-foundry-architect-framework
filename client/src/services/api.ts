@@ -93,6 +93,51 @@ export interface AnalysisRequest {
   mcp_servers?: McpServerConfig[]
 }
 
+export interface TwelveFactorItem {
+  factor: string
+  status: 'PASS' | 'PARTIAL' | 'FAIL' | 'N/A'
+  notes?: string
+}
+
+export interface OwaspFinding {
+  category: string
+  code: string   // A01–A10
+  status: 'FOUND' | 'RISK' | 'CLEAN' | 'N/A'
+  details?: string
+}
+
+export interface SolidItem {
+  principle: string
+  letter: string  // S O L I D
+  status: 'APPLIED' | 'PARTIAL' | 'VIOLATED' | 'N/A'
+  notes?: string
+}
+
+export interface McpAzureGuideline {
+  area: string
+  guideline: string
+  standard?: string
+  priority?: 'high' | 'medium' | 'low'
+}
+
+export interface CodeMcpGuidance {
+  azure_guidelines?: McpAzureGuideline[]
+  framework_guidance?: Record<string, string>
+  quick_wins?: string[]
+  tools_called?: string[]
+  raw_results?: Record<string, string>
+  parse_error?: boolean
+}
+
+export interface InfraMcpGuidance {
+  azure_guidelines?: McpAzureGuideline[]
+  service_guidance?: Record<string, string>
+  iac_best_practices?: string[]
+  tools_called?: string[]
+  raw_results?: Record<string, string>
+  parse_error?: boolean
+}
+
 export interface CodeAnalyzerData {
   technology_inventory?: {
     languages?: string[]
@@ -128,6 +173,10 @@ export interface CodeAnalyzerData {
     config_changes?: string[]
     estimated_effort_days?: number
   }
+  twelve_factor?: TwelveFactorItem[]
+  owasp_findings?: OwaspFinding[]
+  solid_assessment?: Record<string, SolidItem>
+  mcp_guidance?: CodeMcpGuidance
   coupling_score?: string
   summary?: string
 }
@@ -170,7 +219,7 @@ export interface AgentResultSummary {
   input_tokens?: number
   output_tokens?: number
   cost_eur?: number
-  data?: McpEnrichmentData | CodeAnalyzerData | QualityAnalyzerData
+  data?: McpEnrichmentData | CodeAnalyzerData | QualityAnalyzerData | Record<string, unknown>
 }
 
 export interface McpServiceMapping {
