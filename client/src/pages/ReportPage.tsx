@@ -8,7 +8,7 @@ import {
   BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
   Download, Printer, Loader2,
 } from 'lucide-react'
-import { analysisApi, type AnalysisReport, type SessionStatus, type McpEnrichmentData } from '../services/api'
+import { analysisApi, type AnalysisReport, type SessionStatus, type McpEnrichmentData, type CodeAnalyzerData, type QualityAnalyzerData } from '../services/api'
 
 const WAF_COLORS: Record<string, string> = {
   critical: 'text-red-400 bg-red-500/10 border-red-500/30',
@@ -42,6 +42,7 @@ export default function ReportPage() {
   // Hooks must ALL be at the top — before any conditional returns
   const reportRef = useRef<HTMLDivElement>(null)
   const [generatingPdf, setGeneratingPdf] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'app' | 'infra'>('overview')
 
   // If report was passed via navigation state (demo mode), use it directly
   const preloadedReport = location.state?.report as AnalysisReport | undefined
@@ -254,158 +255,296 @@ export default function ReportPage() {
         <TokenCostPanel report={report} />
       )}
 
-      {/* Executive Summary */}
-      {synthesis.executive_summary && (
-        <div className="bg-blue-950/40 border border-blue-800/50 rounded-xl p-6">
-          <h2 className="text-sm font-semibold text-blue-300 uppercase tracking-wider mb-3">Executive Summary</h2>
-          <p className="text-gray-300 leading-relaxed">{synthesis.executive_summary}</p>
-        </div>
-      )}
+      {/* Tab Navigation */}
+      <div className="flex gap-1 bg-gray-900 rounded-xl border border-gray-800 p-1">
+        {[
+          { id: 'overview', label: 'Overview', icon: BarChart3 },
+          { id: 'app', label: 'Application & Code', icon: Code2 },
+          { id: 'infra', label: 'Infrastructure & Azure', icon: Server },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id as any)}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center',
+              activeTab === id
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+            )}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+          </button>
+        ))}
+      </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        {/* Recommended Strategy */}
-        {synthesis.recommended_strategy && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Strategy</div>
-            <div className="text-lg font-bold text-white capitalize">
-              {synthesis.recommended_strategy.split('—')[0].trim()}
+      {/* ── Overview Tab ─────────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <div className="space-y-8">
+          {/* Executive Summary */}
+          {synthesis.executive_summary && (
+            <div className="bg-blue-950/40 border border-blue-800/50 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-blue-300 uppercase tracking-wider mb-3">Executive Summary</h2>
+              <p className="text-gray-300 leading-relaxed">{synthesis.executive_summary}</p>
             </div>
-            {synthesis.recommended_strategy.includes('—') && (
-              <div className="text-xs text-gray-400 mt-2 leading-relaxed">
-                {synthesis.recommended_strategy.split('—')[1].trim()}
+          )}
+
+          <div className="grid grid-cols-3 gap-4">
+            {/* Recommended Strategy */}
+            {synthesis.recommended_strategy && (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Strategy</div>
+                <div className="text-lg font-bold text-white capitalize">
+                  {synthesis.recommended_strategy.split('—')[0].trim()}
+                </div>
+                {synthesis.recommended_strategy.includes('—') && (
+                  <div className="text-xs text-gray-400 mt-2 leading-relaxed">
+                    {synthesis.recommended_strategy.split('—')[1].trim()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Duration */}
+            {synthesis.estimated_migration_duration_weeks && (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Migration Timeline</div>
+                <div className="text-3xl font-bold text-white">
+                  {synthesis.estimated_migration_duration_weeks}
+                  <span className="text-gray-500 text-base font-normal ml-1">weeks</span>
+                </div>
+              </div>
+            )}
+
+            {/* Savings */}
+            {synthesis.estimated_cost_savings_monthly_usd && (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Monthly Savings</div>
+                <div className="text-3xl font-bold text-green-400">
+                  €{synthesis.estimated_cost_savings_monthly_usd.toLocaleString('it-IT')}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  €{(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString('it-IT')}/year
+                </div>
               </div>
             )}
           </div>
-        )}
 
-        {/* Duration */}
-        {synthesis.estimated_migration_duration_weeks && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Migration Timeline</div>
-            <div className="text-3xl font-bold text-white">
-              {synthesis.estimated_migration_duration_weeks}
-              <span className="text-gray-500 text-base font-normal ml-1">weeks</span>
-            </div>
-          </div>
-        )}
-
-        {/* Savings */}
-        {synthesis.estimated_cost_savings_monthly_usd && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Monthly Savings</div>
-            <div className="text-3xl font-bold text-green-400">
-              €{synthesis.estimated_cost_savings_monthly_usd.toLocaleString('it-IT')}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              €{(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString('it-IT')}/year
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Key Findings & Risks */}
-      <div className="grid grid-cols-2 gap-6">
-        {synthesis.key_findings && synthesis.key_findings.length > 0 && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-            <h3 className="font-semibold text-white mb-4">Key Findings</h3>
-            <ul className="space-y-2">
-              {synthesis.key_findings.map((finding, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                  <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                  {finding}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {synthesis.critical_risks && synthesis.critical_risks.length > 0 && (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-            <h3 className="font-semibold text-white mb-4">Critical Risks</h3>
-            <ul className="space-y-2">
-              {synthesis.critical_risks.map((risk, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                  <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                  {risk}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* Top 10 Actions */}
-      {synthesis.top_10_actions && synthesis.top_10_actions.length > 0 && (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-          <h3 className="font-semibold text-white mb-5">Recommended Actions</h3>
-          <div className="space-y-3">
-            {synthesis.top_10_actions.map((action) => (
-              <div key={action.priority} className="flex items-start gap-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600/20 border border-blue-600/40 flex items-center justify-center text-xs font-bold text-blue-400">
-                  {action.priority}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-white">{action.action}</div>
-                  <div className="flex gap-3 mt-2 flex-wrap">
-                    <span className="text-xs text-gray-500">{action.owner}</span>
-                    <span className="text-xs text-gray-500">·</span>
-                    <span className="text-xs text-gray-500">{action.timeline}</span>
-                    <span className="text-xs text-gray-500">·</span>
-                    <span className="text-xs text-gray-500">{action.effort}</span>
-                  </div>
-                </div>
-                <div className={clsx('w-2 h-2 rounded-full flex-shrink-0 mt-2', IMPACT_COLORS[action.impact] ?? 'bg-gray-500')} />
+          {/* Key Findings & Risks */}
+          <div className="grid grid-cols-2 gap-6">
+            {synthesis.key_findings && synthesis.key_findings.length > 0 && (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+                <h3 className="font-semibold text-white mb-4">Key Findings</h3>
+                <ul className="space-y-2">
+                  {synthesis.key_findings.map((finding, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                      <CheckCircle2 className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                      {finding}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* Roadmap */}
-      {synthesis.roadmap_phases && synthesis.roadmap_phases.length > 0 && (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-          <h3 className="font-semibold text-white mb-5">Migration Roadmap</h3>
-          <div className="space-y-4">
-            {synthesis.roadmap_phases.map((phase, i) => (
-              <div key={phase.phase} className="relative">
-                {i < synthesis.roadmap_phases!.length - 1 && (
-                  <div className="absolute left-4 top-12 bottom-0 w-px bg-gray-700" />
-                )}
-                <div className="flex gap-4">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
-                    {phase.phase}
-                  </div>
-                  <div className="flex-1 pb-6">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium text-white">{phase.name}</span>
-                      <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{phase.duration_weeks}w</span>
+            {synthesis.critical_risks && synthesis.critical_risks.length > 0 && (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+                <h3 className="font-semibold text-white mb-4">Critical Risks</h3>
+                <ul className="space-y-2">
+                  {synthesis.critical_risks.map((risk, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                      <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                      {risk}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Top 10 Actions */}
+          {synthesis.top_10_actions && synthesis.top_10_actions.length > 0 && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+              <h3 className="font-semibold text-white mb-5">Recommended Actions</h3>
+              <div className="space-y-3">
+                {synthesis.top_10_actions.map((action) => (
+                  <div key={action.priority} className="flex items-start gap-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600/20 border border-blue-600/40 flex items-center justify-center text-xs font-bold text-blue-400">
+                      {action.priority}
                     </div>
-                    <ul className="mt-2 space-y-1">
-                      {phase.objectives?.map((obj, j) => (
-                        <li key={j} className="text-sm text-gray-400 flex items-start gap-2">
-                          <ChevronRight className="w-3 h-3 mt-1 flex-shrink-0" />
-                          {obj}
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-white">{action.action}</div>
+                      <div className="flex gap-3 mt-2 flex-wrap">
+                        <span className="text-xs text-gray-500">{action.owner}</span>
+                        <span className="text-xs text-gray-500">·</span>
+                        <span className="text-xs text-gray-500">{action.timeline}</span>
+                        <span className="text-xs text-gray-500">·</span>
+                        <span className="text-xs text-gray-500">{action.effort}</span>
+                      </div>
+                    </div>
+                    <div className={clsx('w-2 h-2 rounded-full flex-shrink-0 mt-2', IMPACT_COLORS[action.impact] ?? 'bg-gray-500')} />
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* Roadmap */}
+          {synthesis.roadmap_phases && synthesis.roadmap_phases.length > 0 && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+              <h3 className="font-semibold text-white mb-5">Migration Roadmap</h3>
+              <div className="space-y-4">
+                {synthesis.roadmap_phases.map((phase, i) => (
+                  <div key={phase.phase} className="relative">
+                    {i < synthesis.roadmap_phases!.length - 1 && (
+                      <div className="absolute left-4 top-12 bottom-0 w-px bg-gray-700" />
+                    )}
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
+                        {phase.phase}
+                      </div>
+                      <div className="flex-1 pb-6">
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-white">{phase.name}</span>
+                          <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{phase.duration_weeks}w</span>
+                        </div>
+                        <ul className="mt-2 space-y-1">
+                          {phase.objectives?.map((obj, j) => (
+                            <li key={j} className="text-sm text-gray-400 flex items-start gap-2">
+                              <ChevronRight className="w-3 h-3 mt-1 flex-shrink-0" />
+                              {obj}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Migration Effort Detail */}
+          {synthesis.effort_detail && (
+            <EffortDetailSection effort={synthesis.effort_detail as EffortDetail} />
+          )}
         </div>
       )}
 
-      {/* -- Migration Effort Detail --------------------------------------------- */}
-      {synthesis.effort_detail && (
-        <EffortDetailSection effort={synthesis.effort_detail as EffortDetail} />
+      {/* ── Application & Code Tab ───────────────────────────────────────────── */}
+      {activeTab === 'app' && (
+        <div className="space-y-6">
+          <AppAnalysisPanel report={report} />
+
+          {/* SonarCloud Static Analysis */}
+          <SonarCloudSection data={report.sonarqube_analysis} />
+
+          {/* Dev-focused actions */}
+          {(() => {
+            const devActions = (synthesis.top_10_actions ?? []).filter(
+              a => a.owner === 'dev_team' || a.owner === 'security_team'
+            )
+            if (!devActions.length) return null
+            return (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="w-4 h-4 text-blue-400" />
+                  <h3 className="font-semibold text-white">Development Team Actions</h3>
+                  <span className="text-xs text-gray-500">{devActions.length} actions</span>
+                </div>
+                <div className="space-y-2">
+                  {devActions.map((action, i) => (
+                    <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
+                      <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white mb-1">{action.action}</div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                            action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+                          )}>{action.impact}</span>
+                          <span className="text-[10px] text-gray-500">{action.timeline}</span>
+                          <span className="text-[10px] text-gray-500">{action.effort}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
       )}
 
-      {/* -- SonarCloud Static Analysis ----------------------------------------- */}
-      <SonarCloudSection data={report.sonarqube_analysis} />
+      {/* ── Infrastructure & Azure Tab ───────────────────────────────────────── */}
+      {activeTab === 'infra' && (
+        <div className="space-y-6">
+          {/* Infra recommendations from synthesis */}
+          {(synthesis.infra_recommendations?.length ?? 0) > 0 && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-blue-400" />
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Infrastructure Recommendations</h3>
+              </div>
+              <div className="space-y-2">
+                {synthesis.infra_recommendations!.map((rec, i) => (
+                  <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                    <div className="flex items-start gap-2">
+                      <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                        rec.priority === 'critical' ? 'text-red-400 bg-red-500/10'
+                          : rec.priority === 'high' ? 'text-orange-400 bg-orange-500/10'
+                          : rec.priority === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                          : 'text-green-400 bg-green-500/10'
+                      )}>{rec.priority ?? 'info'}</span>
+                      <div className="flex-1">
+                        {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category.replace(/_/g, ' ')}</div>}
+                        <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                        {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                        {rec.effort && <div className="text-[10px] text-blue-400/60 mt-0.5">{rec.effort}</div>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* -- MCP Enrichment panel ------------------------------------------------ */}
-      <McpEnrichmentPanel report={report} />
+          {/* MCP Enrichment panel */}
+          <McpEnrichmentPanel report={report} />
+
+          {/* Cloud team actions */}
+          {(() => {
+            const cloudActions = (synthesis.top_10_actions ?? []).filter(
+              a => a.owner === 'cloud_team'
+            )
+            if (!cloudActions.length) return null
+            return (
+              <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Server className="w-4 h-4 text-blue-400" />
+                  <h3 className="font-semibold text-white">Cloud Team Actions</h3>
+                  <span className="text-xs text-gray-500">{cloudActions.length} actions</span>
+                </div>
+                <div className="space-y-2">
+                  {cloudActions.map((action, i) => (
+                    <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
+                      <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white mb-1">{action.action}</div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                            action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+                          )}>{action.impact}</span>
+                          <span className="text-[10px] text-gray-500">{action.timeline}</span>
+                          <span className="text-[10px] text-gray-500">{action.effort}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
     </div>
   )
 }
@@ -1292,6 +1431,311 @@ function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
     </div>
   )
 }
+
+// -- App Analysis Panel -------------------------------------------------------
+
+function AppAnalysisPanel({ report }: { report: AnalysisReport }) {
+  const codeResult = report.agent_results?.code_analyzer
+  const qualResult = report.agent_results?.quality_analyzer
+  const synthesis = report.synthesis
+
+  const code = (codeResult?.data ?? {}) as CodeAnalyzerData
+  const qual = (qualResult?.data ?? {}) as QualityAnalyzerData
+
+  const appRecs = synthesis.app_recommendations ?? []
+  const checklist = synthesis.app_migration_checklist ?? []
+
+  const ratingColor = (r: string | undefined) => {
+    if (!r) return 'text-gray-400'
+    const colors: Record<string, string> = { A: 'text-green-400', B: 'text-blue-400', C: 'text-yellow-400', D: 'text-orange-400', E: 'text-red-400' }
+    return colors[r.toUpperCase()] ?? 'text-gray-400'
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Technology Inventory */}
+      {(code.technology_inventory || code.coupling_score) && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Code2 className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Code Analysis</h3>
+            {code.coupling_score && (
+              <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full border ml-2',
+                code.coupling_score === 'LOW' ? 'text-green-400 bg-green-500/10 border-green-500/30'
+                  : code.coupling_score === 'MEDIUM' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+                  : 'text-red-400 bg-red-500/10 border-red-500/30'
+              )}>
+                Cloud Coupling: {code.coupling_score}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Tech inventory */}
+            <div className="space-y-3">
+              {(code.technology_inventory?.languages?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Languages</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.technology_inventory!.languages!.map((l, i) => (
+                      <span key={i} className="text-xs text-blue-300 bg-blue-900/20 border border-blue-800/30 rounded px-2 py-0.5">{l}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(code.technology_inventory?.frameworks?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Frameworks</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.technology_inventory!.frameworks!.map((f, i) => (
+                      <span key={i} className="text-xs text-gray-400 bg-gray-700/50 border border-gray-700 rounded px-2 py-0.5">{f}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(code.technology_inventory?.build_tools?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Build Tools</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.technology_inventory!.build_tools!.map((t, i) => (
+                      <span key={i} className="text-xs text-gray-500 bg-gray-800 rounded px-2 py-0.5">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Cloud coupling + arch */}
+            <div className="space-y-3">
+              {(code.cloud_coupling?.sdks_detected?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-orange-500/70 uppercase tracking-wider font-semibold mb-1.5">Cloud SDKs Detected</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.cloud_coupling!.sdks_detected!.map((s, i) => (
+                      <span key={i} className="text-xs text-orange-300/70 bg-orange-900/20 border border-orange-800/30 rounded px-2 py-0.5">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {code.architecture_patterns?.type && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Architecture</div>
+                  <div className="text-sm text-gray-300">{code.architecture_patterns.type}</div>
+                  {(code.architecture_patterns.patterns?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {code.architecture_patterns.patterns!.map((p, i) => (
+                        <span key={i} className="text-xs text-gray-500 bg-gray-800 rounded px-1.5 py-0.5">{p}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {code.containerization_readiness?.score && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Container Readiness</div>
+                  <div className="text-sm text-gray-300">{code.containerization_readiness.score}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Technical Debt */}
+          {code.technical_debt && (Object.keys(code.technical_debt).length > 0) && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-yellow-500/70 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Technical Debt
+              </div>
+              <div className="flex items-center gap-4">
+                {code.technical_debt.estimated_days != null && (
+                  <div>
+                    <div className="text-[10px] text-gray-600 mb-0.5">Estimated</div>
+                    <div className="text-lg font-bold text-yellow-400">{code.technical_debt.estimated_days}d</div>
+                  </div>
+                )}
+                {code.technical_debt.severity && (
+                  <div>
+                    <div className="text-[10px] text-gray-600 mb-0.5">Severity</div>
+                    <div className="text-sm font-semibold text-yellow-300">{code.technical_debt.severity}</div>
+                  </div>
+                )}
+              </div>
+              {(code.technical_debt.areas?.length ?? 0) > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {code.technical_debt.areas!.map((a, i) => (
+                    <span key={i} className="text-[10px] text-yellow-300/60 bg-yellow-900/10 border border-yellow-800/20 rounded px-1.5 py-0.5">{a}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Migration Impact */}
+          {code.migration_impact && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Migration Impact on Codebase</div>
+              <div className="grid grid-cols-2 gap-3">
+                {(code.migration_impact.code_changes_required?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-[10px] text-red-500/70 font-semibold mb-1">Code Changes Required</div>
+                    {code.migration_impact.code_changes_required!.map((c, i) => (
+                      <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-red-400">•</span>{c}</div>
+                    ))}
+                  </div>
+                )}
+                {(code.migration_impact.config_changes?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-[10px] text-blue-500/70 font-semibold mb-1">Config Changes</div>
+                    {code.migration_impact.config_changes!.map((c, i) => (
+                      <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-blue-400">•</span>{c}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {code.cloud_coupling?.migration_blockers && (code.cloud_coupling.migration_blockers.length ?? 0) > 0 && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-red-400/80 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Code-Level Migration Blockers
+              </div>
+              {code.cloud_coupling.migration_blockers.map((b, i) => (
+                <div key={i} className="text-xs text-red-300/70 flex gap-1.5 items-start">
+                  <span className="text-red-500 shrink-0">✗</span>{b}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quality Analyzer Results */}
+      {qual && Object.keys(qual).length > 0 && !qual.parse_error && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-green-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Code Quality Analysis</h3>
+            {qual.quality_gate?.status && (
+              <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full border',
+                qual.quality_gate.status === 'OK' || qual.quality_gate.passed
+                  ? 'text-green-400 bg-green-500/10 border-green-500/30'
+                  : 'text-red-400 bg-red-500/10 border-red-500/30'
+              )}>
+                Gate: {qual.quality_gate.status}
+              </span>
+            )}
+          </div>
+
+          {/* Ratings */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Reliability', val: qual.reliability_rating ?? qual.summary?.reliability_rating },
+              { label: 'Security', val: qual.security_rating ?? qual.summary?.security_rating },
+              { label: 'Maintainability', val: qual.maintainability_rating ?? qual.summary?.maintainability_rating },
+            ].map(({ label, val }) => (
+              <div key={label} className="bg-gray-800 rounded-lg p-3 text-center">
+                <div className={clsx('text-2xl font-bold', ratingColor(val))}>{val ?? '—'}</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary metrics */}
+          {qual.summary && (
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: 'Bugs', val: qual.summary.bugs, color: 'text-red-400' },
+                { label: 'Vulnerabilities', val: qual.summary.vulnerabilities, color: 'text-orange-400' },
+                { label: 'Code Smells', val: qual.summary.code_smells, color: 'text-yellow-400' },
+                { label: 'Hotspots', val: qual.summary.security_hotspots, color: 'text-purple-400' },
+              ].map(({ label, val, color }) => (
+                <div key={label} className="bg-gray-800 rounded-lg p-2.5 text-center">
+                  <div className={clsx('text-xl font-bold', color)}>{val ?? '—'}</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Top recommendations from quality_analyzer */}
+          {(qual.top_recommendations?.length ?? 0) > 0 && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Quality Recommendations</div>
+              {qual.top_recommendations!.map((r, i) => (
+                <div key={i} className="text-xs text-gray-400 flex gap-1.5 items-start mb-1">
+                  <CheckCircle2 className="w-3 h-3 text-green-400/70 mt-0.5 shrink-0" />{r}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* App Recommendations from synthesis */}
+      {appRecs.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Application Recommendations</h3>
+            <span className="text-xs text-gray-500">{appRecs.length} items</span>
+          </div>
+          <div className="space-y-2">
+            {appRecs.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                    rec.priority === 'critical' ? 'text-red-400 bg-red-500/10'
+                      : rec.priority === 'high' ? 'text-orange-400 bg-orange-500/10'
+                      : rec.priority === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                      : 'text-green-400 bg-green-500/10'
+                  )}>{rec.priority ?? 'info'}</span>
+                  <div className="flex-1 min-w-0">
+                    {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category.replace(/_/g, ' ')}</div>}
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                    <div className="flex items-center gap-3 mt-1">
+                      {rec.effort && <span className="text-[10px] text-blue-400/60 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{rec.effort}</span>}
+                      {rec.standard && <span className="text-[10px] text-gray-600 italic">{rec.standard}</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Migration Checklist */}
+      {checklist.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Application Migration Checklist</h3>
+            <span className="text-xs text-gray-500">{checklist.length} items</span>
+          </div>
+          <div className="space-y-1.5">
+            {checklist.map((item, i) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800/40 rounded px-3 py-2">
+                <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                  item.status === 'required' ? 'text-red-400 bg-red-500/10'
+                    : item.status === 'recommended' ? 'text-yellow-400 bg-yellow-500/10'
+                    : 'text-gray-400 bg-gray-700'
+                )}>{item.status ?? 'optional'}</span>
+                <div className="flex-1 min-w-0">
+                  {item.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{item.category.replace(/_/g, ' ')}</div>}
+                  <div className="text-xs text-gray-300">{item.item}</div>
+                  {item.effort && <div className="text-[10px] text-blue-400/60 mt-0.5 flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{item.effort}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- SonarCloud section component ---------------------------------------------
 
 function SonarCloudSection({ data }: { data?: AnalysisReport['sonarqube_analysis'] }) {
   if (!data) return null

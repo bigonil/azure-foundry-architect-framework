@@ -93,6 +93,75 @@ export interface AnalysisRequest {
   mcp_servers?: McpServerConfig[]
 }
 
+export interface CodeAnalyzerData {
+  technology_inventory?: {
+    languages?: string[]
+    frameworks?: string[]
+    build_tools?: string[]
+    test_frameworks?: string[]
+    package_managers?: string[]
+  }
+  cloud_coupling?: {
+    sdks_detected?: string[]
+    services_referenced?: string[]
+    coupling_level?: string
+    migration_blockers?: string[]
+  }
+  architecture_patterns?: {
+    type?: string
+    patterns?: string[]
+    entry_points?: string[]
+    key_modules?: string[]
+  }
+  technical_debt?: {
+    estimated_days?: number
+    areas?: string[]
+    severity?: string
+  }
+  containerization_readiness?: {
+    score?: string
+    blockers?: string[]
+    recommendations?: string[]
+  }
+  migration_impact?: {
+    code_changes_required?: string[]
+    config_changes?: string[]
+    estimated_effort_days?: number
+  }
+  coupling_score?: string
+  summary?: string
+}
+
+export interface QualityAnalyzerData {
+  quality_gate?: { status?: string; passed?: boolean }
+  summary?: {
+    bugs?: number
+    vulnerabilities?: number
+    code_smells?: number
+    security_hotspots?: number
+    technical_debt?: string
+    coverage?: number
+    duplications?: number
+    reliability_rating?: string
+    security_rating?: string
+    maintainability_rating?: string
+  }
+  issues?: Array<{
+    type?: string
+    severity?: string
+    message?: string
+    component?: string
+    line?: number
+  }>
+  top_recommendations?: string[]
+  coverage_by_module?: any[]
+  total_issues?: number
+  reliability_rating?: string
+  security_rating?: string
+  maintainability_rating?: string
+  parse_error?: boolean
+}
+
 export interface AgentResultSummary {
   agent_name: string
   status: 'success' | 'partial' | 'failed' | 'skipped'
@@ -101,7 +170,7 @@ export interface AgentResultSummary {
   input_tokens?: number
   output_tokens?: number
   cost_eur?: number
-  data?: McpEnrichmentData  // populated for mcp_enrichment only
+  data?: McpEnrichmentData | CodeAnalyzerData | QualityAnalyzerData
 }
 
 export interface McpServiceMapping {
@@ -210,6 +279,27 @@ export interface AnalysisReport {
       key_milestones: string[]
     }>
     effort_detail?: Record<string, unknown>
+    app_recommendations?: Array<{
+      category?: string
+      priority?: string
+      recommendation?: string
+      rationale?: string
+      effort?: string
+      standard?: string
+    }>
+    infra_recommendations?: Array<{
+      category?: string
+      priority?: string
+      recommendation?: string
+      rationale?: string
+      effort?: string
+    }>
+    app_migration_checklist?: Array<{
+      item?: string
+      status?: string
+      category?: string
+      effort?: string
+    }>
   }
   agent_results: Record<string, AgentResultSummary>
   created_at: number

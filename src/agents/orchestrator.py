@@ -486,8 +486,41 @@ Produce a JSON report with:
       "key_milestones": ["<measurable milestone>"]
     }}
   ],
-  "effort_detail": <copy the effort_detail object verbatim from migration_planner agent results if present, otherwise null>
+  "effort_detail": <copy the effort_detail object verbatim from migration_planner agent results if present, otherwise null>,
+  "app_recommendations": [
+    {{
+      "category": "<code_quality|refactoring|security|testing|ci_cd|twelve_factor|containerization|dependencies>",
+      "priority": "<critical|high|medium|low>",
+      "recommendation": "<specific actionable recommendation for developers>",
+      "rationale": "<why, referencing actual findings from code_analyzer/quality_analyzer>",
+      "effort": "<hours|days|weeks>",
+      "standard": "<optional: reference to standard e.g. OWASP Top 10, 12-factor App, CNCF, ISO 27001>"
+    }}
+  ],
+  "infra_recommendations": [
+    {{
+      "category": "<networking|security|iac|scalability|resilience|cost|monitoring|compliance>",
+      "priority": "<critical|high|medium|low>",
+      "recommendation": "<specific actionable recommendation for the cloud/infra team>",
+      "rationale": "<why, referencing actual findings from infra_analyzer/mcp_enrichment>",
+      "effort": "<hours|days|weeks>"
+    }}
+  ],
+  "app_migration_checklist": [
+    {{
+      "item": "<specific code/app change required for Azure migration>",
+      "status": "<required|recommended|optional>",
+      "category": "<code_change|config_change|dependency_update|test_update|ci_cd_update>",
+      "effort": "<hours|days|weeks>"
+    }}
+  ]
 }}
+
+4. app_recommendations: Generate 6-10 developer-focused recommendations derived from code_analyzer and quality_analyzer data. These should follow standard software development guidelines (12-factor app, SOLID, OWASP, CNCF best practices). Reference the actual coupling_score, technical_debt, and security findings.
+
+5. infra_recommendations: Generate 6-10 infrastructure/architecture recommendations derived from infra_analyzer and mcp_enrichment data. Focus on Azure-specific patterns, networking, IaC quality, monitoring, resilience.
+
+6. app_migration_checklist: Generate 8-15 concrete code/app changes required for the Azure migration. Examples: "Replace AWS SDK with Azure SDK", "Update connection strings to Azure format", "Configure Azure AD authentication", "Update Docker base images for Azure Container Registry".
 """
 
 
