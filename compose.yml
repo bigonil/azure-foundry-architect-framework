@@ -17,6 +17,10 @@ services:
       AZURE_MCP_SERVER_ENABLED: "${AZURE_MCP_SERVER_ENABLED:-false}"
       AZURE_DEVOPS_MCP_SERVER_URL: "http://mcp-devops:3334/sse"
       AZURE_DEVOPS_MCP_SERVER_ENABLED: "${AZURE_DEVOPS_MCP_SERVER_ENABLED:-false}"
+      # MinIO public endpoint for presign URLs returned to the browser.
+      # Host port is 9007 (not 9005, which is taken by compose.local.yml).
+      MINIO_ENDPOINT: "http://minio:9005"
+      MINIO_PUBLIC_ENDPOINT: "http://localhost:9007"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -97,8 +101,8 @@ services:
   minio:
     image: minio/minio:latest
     ports:
-      - "9005:9005"   # S3-compatible API
-      - "9006:9006"   # Web console  →  http://localhost:9006
+      - "9007:9005"   # S3-compatible API  (9005 is used by compose.local.yml)
+      - "9008:9006"   # Web console  →  http://localhost:9008
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-efesto}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-changeme_local_minio}
@@ -117,8 +121,9 @@ services:
 
   mongodb:
     image: mongo:7
-    ports:
-      - "27017:27017"
+    # No host port binding — API connects via Docker network (mongodb:27017).
+    # compose.local.yml binds 27017 for dev-mode host access; removing it here
+    # prevents the "port already allocated" error when both stacks run together.
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme_local}
