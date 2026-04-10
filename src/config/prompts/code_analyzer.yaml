@@ -94,4 +94,4 @@ system_prompt: |
   The `twelve_factor` field MUST list all 12 factors with their compliance status.
 
 temperature: 0.1
-max_tokens: 6144
+max_tokens: 8192

@@ -340,7 +340,7 @@ Return the orchestration plan as JSON.
         )
         response = await client.messages.create(
             model=self.settings.anthropic_model,
-            max_tokens=4096,
+            max_tokens=8192,  # increased from 4096 — synthesis needs room for all sections
             system=system,
             messages=[{"role": "user", "content": synthesis_prompt}],
         )
@@ -348,7 +348,24 @@ Return the orchestration plan as JSON.
         clean = self._extract_json(raw)
         in_tok: int = getattr(response.usage, "input_tokens", 0)
         out_tok: int = getattr(response.usage, "output_tokens", 0)
-        return json.loads(clean), in_tok, out_tok
+        try:
+            return json.loads(clean), in_tok, out_tok
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning(
+                "[orchestrator] Synthesis JSON parse failed (%s) — first 300 chars: %s…",
+                exc, raw[:300],
+            )
+            # Return minimal synthesis so the report is still usable
+            return {
+                "executive_summary": (
+                    "Synthesis JSON could not be parsed. Review agent results directly."
+                ),
+                "maturity_score": 2.5,
+                "key_findings": [],
+                "critical_risks": [],
+                "top_10_actions": [],
+                "roadmap_phases": [],
+            }, in_tok, out_tok
 
     async def _synthesize_azure(self, synthesis_prompt: str) -> dict[str, Any]:
         """Synthesize via Azure OpenAI GPT-4o."""
@@ -369,16 +386,44 @@ Return the orchestration plan as JSON.
         )
         return json.loads(response.choices[0].message.content or "{}")
 
+    # Fields that are too large or redundant for synthesis context.
+    # Stripping these keeps the prompt manageable and synthesis quality high.
+    _SYNTHESIS_SKIP_FIELDS = frozenset({
+        "raw",               # duplicates all parsed fields (very large)
+        "raw_text",          # only present on parse_error; not useful for synthesis
+        "sonarqube_analysis",# large; synthesis gets aggregated SonarCloud metrics via code_analyzer summary
+        "mcp_guidance",      # Phase-1 MCP output for code (kept for UI, not needed in synthesis)
+        "mcp_infra_guidance",# Phase-1 MCP output for infra (same)
+    })
+
+    @classmethod
+    def _compact_for_synthesis(cls, data: dict) -> dict:
+        """Return a synthesis-friendly view of agent data (stripped of heavy/redundant fields)."""
+        result: dict = {}
+        for k, v in data.items():
+            if k in cls._SYNTHESIS_SKIP_FIELDS:
+                continue
+            # Truncate very large arrays — synthesis needs a representative sample, not every item
+            if isinstance(v, list) and len(v) > 20:
+                result[k] = v[:20]
+            else:
+                result[k] = v
+        return result
+
     def _build_synthesis_prompt(
         self, request: AnalysisRequest, results: dict[str, AgentResult]
     ) -> str:
         results_summary = {}
         mcp_enrichment_data = None
         for name, result in results.items():
+            if result.status == "success":
+                compact_data = self._compact_for_synthesis(result.data)
+            else:
+                compact_data = {"error": result.error}
             results_summary[name] = {
                 "status": result.status,
                 "duration_seconds": result.duration_seconds,
-                "data": result.data if result.status == "success" else {"error": result.error},
+                "data": compact_data,
             }
             if name == "mcp_enrichment" and result.status == "success":
                 mcp_enrichment_data = result.data

@@ -349,8 +349,10 @@ async def _execute_analysis(
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 cost_eur=result.cost_eur,
-                # Include full enrichment payload so the UI can render it
-                data=result.data if name in ("mcp_enrichment", "code_analyzer", "quality_analyzer") else None,
+                # Include full data payload so the UI can render all sections
+                data=result.data if name in (
+                    "mcp_enrichment", "code_analyzer", "infra_analyzer", "quality_analyzer"
+                ) else None,
             )
             for name, result in report.agent_results.items()
         },

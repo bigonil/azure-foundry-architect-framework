@@ -285,7 +285,12 @@ owasp_findings, solid_assessment, coupling_score, summary.
                 "owasp_findings":       data.get("owasp_findings", []),
                 "solid_assessment":     data.get("solid_assessment", {}),
                 "summary":              data.get("summary", ""),
-                "coupling_score":       data.get("coupling_score", "UNKNOWN"),
+                "coupling_score": (
+                    data.get("coupling_score")
+                    or (data.get("cloud_coupling") or {}).get("coupling_level")
+                    or (data.get("cloud_coupling") or {}).get("coupling_score")
+                    or "UNKNOWN"
+                ),
                 "raw": data,
             }
         except json.JSONDecodeError:
