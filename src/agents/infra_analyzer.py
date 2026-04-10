@@ -148,7 +148,10 @@ class InfraAnalyzerAgent(BaseAgent):
         # Build analysis summary for synthesis
         resource_count = analysis_data.get("total_resources", 0)
         svc_map = analysis_data.get("service_mapping", [])
-        services = [s.get("source_service", "") for s in svc_map if s.get("source_service")]
+        services = [
+            s.get("source_service", "") for s in svc_map
+            if isinstance(s, dict) and s.get("source_service")
+        ]
         critical = analysis_data.get("critical_findings", [])
         summary = (
             f"IaC types: {', '.join(iac_types) or 'unknown'}. "
@@ -193,9 +196,15 @@ class InfraAnalyzerAgent(BaseAgent):
         # Collect source service names from both service_mapping and resource_inventory
         raw_names: list[str] = []
         for s in svc_map:
-            raw_names.append((s.get("source_service") or "").lower())
+            if isinstance(s, dict):
+                raw_names.append((s.get("source_service") or "").lower())
+            elif isinstance(s, str):
+                raw_names.append(s.lower())
         for r in resource_inv:
-            raw_names.append((r.get("type") or r.get("source_service") or "").lower())
+            if isinstance(r, dict):
+                raw_names.append((r.get("type") or r.get("source_service") or "").lower())
+            elif isinstance(r, str):
+                raw_names.append(r.lower())
 
         matched: list[str] = []
         for name in raw_names:
