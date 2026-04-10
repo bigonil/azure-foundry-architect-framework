@@ -198,6 +198,12 @@ The report page shows:
 - Per-agent breakdown with proportional bars (all agents shown, including those with 0 tokens)
 - Remaining budget and percentage used (color-coded)
 
+### Synthesis (Phase 3)
+
+After all agents complete, the orchestrator sends a **compact synthesis prompt** to Claude Opus 4.6 (`max_tokens=8192`) and produces the final unified report. The prompt includes only the structured agent outputs — heavy/redundant fields (`raw`, `sonarqube_analysis`, `mcp_guidance`, `mcp_infra_guidance`) and arrays larger than 20 items are stripped by `_compact_for_synthesis()` before building the context. This keeps the synthesis prompt manageable and synthesis quality high.
+
+If synthesis JSON parsing fails (e.g., malformed response), the orchestrator saves a minimal synthesis object (`maturity_score=2.5`, empty lists) so the session still completes and the UI can display agent-level data.
+
 ### Maturity Score
 
 Displayed in the report header. Computed by Claude during synthesis (Phase 3), scored 1.0–5.0:
@@ -621,13 +627,19 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | `unhandled errors in a TaskGroup` | `BaseExceptionGroup` not caught by `except Exception` | Fixed — `except BaseException` with re-raise for SystemExit |
 | DevOps MCP: SSE opens then closes immediately | `@azure-devops/mcp` crashes at init (SSL or auth failure) | Caught gracefully with 3-attempt retry; enrichment continues with Azure MCP only. Verify `AZURE_DEVOPS_EXT_PAT` and `AZURE_DEVOPS_ORG`. On corporate networks, mount the CA bundle and set `NODE_EXTRA_CA_CERTS` inline in the CMD (see Dockerfile.mcp-devops) |
 | `NODE_EXTRA_CA_CERTS` wrong path in container | Claude Code `settings.json` `env` leaks host Windows path via Docker Desktop / Git Bash (backslashes stripped) | Fixed — `NODE_EXTRA_CA_CERTS` set inline in Dockerfile CMD as `sh -c "NODE_EXTRA_CA_CERTS=<container-path> supergateway ..."` |
+| `code_analyzer: Could not parse JSON response` | Large code response truncated — OWASP/SOLID/12-Factor output requires more tokens | Fixed — `max_tokens` raised to 8192 |
 | `infra_analyzer: Could not parse JSON response` | Large infra response truncated (max_tokens too small) OR Claude returned JSON array instead of object | Fixed — `max_tokens` raised to 8192; `parse_response` now normalises JSON arrays to objects |
 | `synthesis: Input should be a valid dictionary, input_type=list` | Claude returns a JSON array `[...]` instead of object `{...}` for the synthesis step | Fixed — orchestrator normalises list → dict before Pydantic validation |
 | `Already connected to a transport` (supergateway crash) | `Server.close()` in `@modelcontextprotocol/sdk` calls `transport.close()` but never resets `_transport`; the `onclose` event (which does reset it) doesn't fire on an already-ended HTTP response — so every 2nd SSE connection throws | Fixed — `Dockerfile.mcp-azure` patches `stdioToSse.js` at build time to set `server._transport = undefined` after `close()` |
 | `Server disconnected without sending a response` | SSE session dropped after uvicorn hot-reload | Fixed — SSE connect retried up to 3 times with 2s backoff before giving up |
 | `SONARCLOUD_TOKEN not set — skipping SonarCloud` | Settings `lru_cache` loaded before `.env` update | Restart the backend after editing `.env`. Both `SONARCLOUD_TOKEN` and `SONARCLOUD_ORG` must be set |
 | `Bind for 0.0.0.0:9005 failed: port already allocated` | `compose.local.yml` and `compose.yml` both tried to bind MinIO on 9005 | Fixed — `compose.yml` now maps MinIO to host ports **9007/9008**; MongoDB has no host binding. Set `MINIO_PUBLIC_ENDPOINT=http://localhost:9007` when using full-stack Docker mode |
-| `Azure MCP Enrichment` panel shows only `Quality: unknown` | `AgentResultSummary` was not including the `data` field — enrichment payload was stripped before reaching the frontend | Fixed — API route now includes `data` for `mcp_enrichment`, `code_analyzer`, and `quality_analyzer` |
+| `Azure MCP Enrichment` panel shows only `Quality: unknown` | `AgentResultSummary` was not including the `data` field — enrichment payload was stripped before reaching the frontend | Fixed — API route now includes `data` for `mcp_enrichment`, `code_analyzer`, `infra_analyzer`, and `quality_analyzer` |
+| Synthesis sections all empty (no Executive Summary / Strategy / Findings) | Synthesis prompt was too large — `raw`, `sonarqube_analysis`, `mcp_guidance`, `mcp_infra_guidance` fields duplicated all data, causing Claude to produce empty JSON. Also `max_tokens=4096` was too small for all synthesis sections | Fixed — `_compact_for_synthesis()` strips heavy/redundant fields; synthesis `max_tokens` raised to 8192; `try/except` fallback prevents total analysis failure if synthesis JSON parse fails |
+| Maturity Score always 0 | Depends on empty synthesis — see row above | Fixed with synthesis fixes above |
+| Cloud Coupling shows `UNKNOWN` even though coupling was detected | `parse_response` defaulted to `"UNKNOWN"` if top-level `coupling_score` key was missing, ignoring `cloud_coupling.coupling_level` | Fixed — added fallback chain: `coupling_score` → `cloud_coupling.coupling_level` → `cloud_coupling.coupling_score` → `"UNKNOWN"` |
+| `infra_analyzer` data (WAF, CIS, CAF, `mcp_infra_guidance`) not visible in UI | `infra_analyzer` was missing from the `data` allow-list in `analysis.py` | Fixed — `infra_analyzer` added to allow-list |
+| `service_mapping` or `resource_inventory` items cause `'str' object has no attribute 'get'` | Claude occasionally returns those lists as strings instead of dicts | Fixed — `_detect_service_patterns` and `_enrich_with_mcp` now guard with `isinstance(s, dict)` |
 
 ---
 
