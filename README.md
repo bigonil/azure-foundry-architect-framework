@@ -14,7 +14,7 @@ and Well-Architected Framework review. Built on **Azure AI Foundry** (production
 | Active agents | All 7 + MCP Enrichment (Phase 1.5) | All 7 + MCP Enrichment |
 | State store | MongoDB 7 (Docker) | Azure Cosmos DB |
 | Cache | Redis 7 (Docker) | Azure Cache for Redis |
-| Object storage | MinIO (Docker, porta 9005) | Azure Blob Storage |
+| Object storage | MinIO (Docker, porta 9007 in full-stack / 9005 in dev) | Azure Blob Storage |
 | Static analysis | SonarCloud REST API | SonarCloud REST API |
 | Artifact sources | Upload / MinIO / Volume / Git clone | Upload / Blob Storage / Git clone |
 | MCP enrichment | Pre-configured Docker services (`--profile mcp`) | Pre-configured internal services |
@@ -212,6 +212,22 @@ When Azure MCP servers are active, a dedicated **MCP Enrichment Agent** runs bet
 The MCP tool-use loop connects to servers via local SSE (`mcp[cli]` Python SDK + `AsyncExitStack`) and uses **`claude-haiku-4-5-20251001`** (configurable via `ANTHROPIC_MODEL_MCP`) to stay within rate limits across 10–30 tool calls per analysis. Rate limit errors exit the loop gracefully and return partial results.
 
 **`azuremigrate` is always called first** (mandatory pre-call before the Claude loop). The backend invokes it directly via `sess.call_tool()` before entering the Claude tool-use loop — guaranteeing migration assessment data is captured regardless of Claude’s tool selection. The raw result is injected into Claude’s initial message and stored verbatim as `azure_migrate_raw` in the report (shown in a collapsible block in the UI). SSE connections include a **3-attempt retry with 2s backoff** to survive transient disconnects (e.g. after a uvicorn hot-reload).
+
+**MCP enrichment output** (all fields sent to the frontend via `AgentResultSummary.data`):
+
+| Field | Content |
+|---|---|
+| `migration_readiness` | Score, suitability, blockers, dependencies, estimated effort weeks |
+| `aws_to_azure_service_mapping` | Per-service mapping: source tier, Azure SKU, migration approach (lift-and-shift/re-platform/re-arch), complexity, €/mo, step-by-step migration instructions, docs URL |
+| `azure_pricing_estimate` | Monthly EUR total, comparison vs current spend, savings %, line-item breakdown with SKU + quantity, optimization tips |
+| `advisor_recommendations` | Category, severity, recommendation, impact, implementation steps |
+| `waf_assessment` | 5-pillar scores (1–5) with findings and recommendations per pillar |
+| `reference_architectures` | Name, Microsoft Learn URL, fit score, key components |
+| `service_guidance` | Per-Azure-service: SKU, sizing notes, migration steps, config tips, docs URL, €/mo |
+| `infrastructure_recommendations` | Area, priority, recommendation, rationale, effort |
+| `migration_path` | Recommended approach, phased timeline (services, activities, risks), quick wins |
+| `best_practices` | Azure best practices for the specific services detected |
+| `azure_migrate_raw` | Verbatim text from Azure Migrate skill |
 
 **Supergateway reconnect fix**: `@modelcontextprotocol/sdk`’s `Server.close()` calls `transport.close()` but never resets the internal `_transport` field — only the `onclose` event callback does, which doesn’t fire when the HTTP response is already ended. Without the fix, every second SSE connection throws `Already connected to a transport`. `Dockerfile.mcp-azure` patches `stdioToSse.js` at build time to also set `server._transport = undefined` after `close()`, making all reconnects reliable.
 
@@ -411,18 +427,36 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ### Report page outputs
 
+The report is organized in **three tabs**:
+
+#### Tab 1 — Overview
 | Section | Content |
 |---|---|
-| Agent Status Bar | Each agent status, duration, token usage |
-| **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown |
-| **Azure MCP Enrichment** | Skills called, **Azure Migrate assessment** (score + suitability + blockers + raw output), real pricing + breakdown, Advisor recs (all, with category/impact), WAF scores + findings, reference architectures (with fit scores), per-service SKU guidance, best practices |
+| Agent Status Bar | Each agent status, duration, token usage (always visible) |
+| **Token & Cost Panel** | Total tokens, EUR cost, budget bar, per-agent breakdown (always visible) |
 | Executive Summary | C-level summary with EUR values |
 | Strategy / Timeline / Savings | 6R strategy, weeks, monthly savings |
 | Key Findings & Risks | Agent-derived findings and critical risks |
 | Recommended Actions | Top 10 actions with owner, timeline, effort, impact |
 | Migration Roadmap | Phase-by-phase with objectives and milestones |
 | **Migration Effort Detail** | Person-days, hours, team allocation (roles + EUR rates), wave breakdown |
+
+#### Tab 2 — Application & Code
+| Section | Content |
+|---|---|
+| **Code Analysis** | Technology inventory (languages, frameworks, build tools), cloud coupling score, cloud SDKs detected, architecture patterns, containerization readiness, technical debt (days + severity), migration impact on codebase |
+| **Code Quality** | Quality gate, reliability/security/maintainability ratings (A–E), bugs/vulnerabilities/code smells/hotspots, quality recommendations |
+| **Application Recommendations** | 6–10 dev-focused items from synthesis: code quality, refactoring, security (OWASP), 12-factor, CNCF patterns — each with category, priority, effort, standard reference |
+| **Application Migration Checklist** | 8–15 concrete code changes required for Azure migration (required/recommended/optional): SDK swaps, connection string updates, auth changes, CI/CD updates |
 | SonarCloud Analysis | Quality gate, ratings (A–E), metrics, top issues |
+| Dev/Security team actions | Top 10 actions filtered by `owner: dev_team` or `security_team` |
+
+#### Tab 3 — Infrastructure & Azure
+| Section | Content |
+|---|---|
+| **Infrastructure Recommendations** | 6–10 items from synthesis: networking, IaC quality, scalability, resilience, cost, monitoring — with priority, rationale, effort |
+| **Azure MCP Enrichment** | Full enrichment panel (see MCP output table above): service mapping, pricing, WAF, migration path, advisor, reference architectures, per-service guidance |
+| Cloud team actions | Top 10 actions filtered by `owner: cloud_team` |
 
 ---
 
@@ -561,6 +595,8 @@ Set `AZURE_MCP_SERVER_URL` / `AZURE_DEVOPS_MCP_SERVER_URL` in `.env` accordingly
 | `Already connected to a transport` (supergateway crash) | `Server.close()` in `@modelcontextprotocol/sdk` calls `transport.close()` but never resets `_transport`; the `onclose` event (which does reset it) doesn't fire on an already-ended HTTP response — so every 2nd SSE connection throws | Fixed — `Dockerfile.mcp-azure` patches `stdioToSse.js` at build time to set `server._transport = undefined` after `close()` |
 | `Server disconnected without sending a response` | SSE session dropped after uvicorn hot-reload | Fixed — SSE connect retried up to 3 times with 2s backoff before giving up |
 | `SONARCLOUD_TOKEN not set — skipping SonarCloud` | Settings `lru_cache` loaded before `.env` update | Restart the backend after editing `.env`. Both `SONARCLOUD_TOKEN` and `SONARCLOUD_ORG` must be set |
+| `Bind for 0.0.0.0:9005 failed: port already allocated` | `compose.local.yml` and `compose.yml` both tried to bind MinIO on 9005 | Fixed — `compose.yml` now maps MinIO to host ports **9007/9008**; MongoDB has no host binding. Set `MINIO_PUBLIC_ENDPOINT=http://localhost:9007` when using full-stack Docker mode |
+| `Azure MCP Enrichment` panel shows only `Quality: unknown` | `AgentResultSummary` was not including the `data` field — enrichment payload was stripped before reaching the frontend | Fixed — API route now includes `data` for `mcp_enrichment`, `code_analyzer`, and `quality_analyzer` |
 
 ---
 
@@ -580,8 +616,16 @@ docker compose ps
 docker compose logs -f api
 ```
 
-The client is served at [http://localhost:3000](http://localhost:3000).
-The API is at [http://localhost:8000](http://localhost:8000).
+| Service | URL |
+|---|---|
+| Client (Nginx) | [http://localhost:3000](http://localhost:3000) |
+| API (FastAPI) | [http://localhost:8000](http://localhost:8000) |
+| MinIO S3 API | [http://localhost:9007](http://localhost:9007) |
+| MinIO Console | [http://localhost:9008](http://localhost:9008) |
+| Azure MCP SSE | [http://localhost:3333/sse](http://localhost:3333/sse) |
+| Azure DevOps MCP SSE | [http://localhost:3334/sse](http://localhost:3334/sse) |
+
+> **Port allocation**: `compose.yml` uses MinIO on **9007/9008** to avoid conflicting with `compose.local.yml` which binds 9005/9006. MongoDB in `compose.yml` has no host binding (API uses Docker-internal `mongodb:27017`). Both stacks can run simultaneously.
 
 ---
 
