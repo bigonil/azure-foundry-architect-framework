@@ -20,7 +20,6 @@ CA_PRINCIPAL=$(az containerapp show \
 
 OPENAI_NAME="oai-${PREFIX}-${ENV}"
 SEARCH_NAME="srch-${PREFIX}-${ENV}"
-COSMOS_NAME="cosmos-${PREFIX}-${ENV}"
 KV_NAME="kv-${PREFIX}-${ENV}"
 
 OPENAI_RESOURCE_ID=$(az cognitiveservices account show \

@@ -11,14 +11,28 @@ services:
     environment:
       APP_ENV: development
       APP_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
+      MONGODB_URI: "mongodb://admin:${MONGO_ROOT_PASSWORD:-changeme_local}@mongodb:27017/architect-framework?authSource=admin"
+      # Pre-configured MCP servers — internal Docker network URLs
+      AZURE_MCP_SERVER_URL: "http://mcp-azure:3333/sse"
+      AZURE_MCP_SERVER_ENABLED: "${AZURE_MCP_SERVER_ENABLED:-false}"
+      AZURE_DEVOPS_MCP_SERVER_URL: "http://mcp-devops:3334/sse"
+      AZURE_DEVOPS_MCP_SERVER_ENABLED: "${AZURE_DEVOPS_MCP_SERVER_ENABLED:-false}"
+      # MinIO public endpoint for presign URLs returned to the browser.
+      # Host port is 9007 (not 9005, which is taken by compose.local.yml).
+      MINIO_ENDPOINT: "http://minio:9005"
+      MINIO_PUBLIC_ENDPOINT: "http://localhost:9007"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    depends_on:
+      minio:
+        condition: service_healthy
     volumes:
-      - ./src:/app/src:ro    # Hot reload in dev
+      - ./src:/app/src:ro          # Hot reload in dev
+      - efesto_uploads:/app/uploads # Shared artifact volume
     restart: unless-stopped
     networks:
       - app
@@ -36,27 +50,100 @@ services:
     networks:
       - app
 
-  # Local dev: Redis for session caching (optional, replaces in-memory store)
-  redis:
-    image: redis:7-alpine
+  # ── Azure MCP Server ────────────────────────────────────────────────────────
+  # Exposes Azure Skills via SSE at http://mcp-azure:3333/sse (Docker-internal)
+  # Skills: azure-migrate, advisor, pricing, cloudarchitect, WAF, bestpractices,
+  #         compute, AKS, App Service, Container Apps, SQL, Cosmos, Storage, etc.
+  # Start with: AZURE_MCP_SERVER_ENABLED=true docker compose up mcp-azure
+  mcp-azure:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-azure
+    environment:
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
     ports:
-      - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "3333:3333"   # Exposed for local testing; agents use Docker-internal URL
     restart: unless-stopped
     networks:
       - app
     profiles:
-      - full    # Only start with: docker compose --profile full up
+      - mcp
+
+  # ── Azure DevOps MCP Server ─────────────────────────────────────────────────
+  # Exposes Azure DevOps tools via SSE at http://mcp-devops:3334/sse
+  # Tools: repos, work items, pipelines, wikis, test plans, search
+  # Requires: AZURE_DEVOPS_ORG + AZURE_DEVOPS_EXT_PAT (PAT with read scopes)
+  # Start with: AZURE_DEVOPS_MCP_SERVER_ENABLED=true docker compose up mcp-devops
+  mcp-devops:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-devops
+    environment:
+      AZURE_DEVOPS_ORG: ${AZURE_DEVOPS_ORG:-}
+      AZURE_DEVOPS_EXT_PAT: ${AZURE_DEVOPS_EXT_PAT:-}
+      # Corporate proxy/SSL inspection.
+      # NODE_EXTRA_CA_CERTS is set in the Dockerfile CMD to the container path
+      # to prevent the host Windows path from being inherited via Docker Desktop.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    volumes:
+      - C:/Users/luca.bigoni/corporate-ca-bundle.pem:/usr/local/share/ca-certificates/corporate-ca-bundle.pem:ro
+    ports:
+      - "3334:3334"
+    restart: unless-stopped
+    networks:
+      - app
+    profiles:
+      - mcp
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9007:9005"   # S3-compatible API  (9005 is used by compose.local.yml)
+      - "9008:9006"   # Web console  →  http://localhost:9008
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-efesto}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-changeme_local_minio}
+    command: server /data --address ":9005" --console-address ":9006"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9005/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app
+
+  mongodb:
+    image: mongo:7
+    # No host port binding — API connects via Docker network (mongodb:27017).
+    # compose.local.yml binds 27017 for dev-mode host access; removing it here
+    # prevents the "port already allocated" error when both stacks run together.
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme_local}
+      MONGO_INITDB_DATABASE: architect-framework
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app
 
 volumes:
-  redis_data:
+  mongo_data:
+  efesto_uploads:
+  minio_data:
 
 networks:
   app:

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { mockAnalysisApi } from './mockApi'
 
 const api = axios.create({
   baseURL: '/api',
@@ -10,6 +11,74 @@ export interface ArtifactItem {
   content: string
 }
 
+// ── Source config types (mirror backend discriminated union) ─────────────────
+
+// ── Presign ──────────────────────────────────────────────────────────────────
+
+export interface PresignRequest {
+  filename: string
+  artifact_type: 'code' | 'iac'
+}
+
+export interface PresignResponse {
+  key: string
+  upload_url: string
+  method: 'PUT'
+  expires_in: number
+}
+
+export interface BlobArtifactRef {
+  key: string
+  filename: string
+  artifact_type: 'code' | 'iac'
+}
+
+export interface BlobSourceConfig {
+  type: 'blob'
+  artifacts: BlobArtifactRef[]
+}
+
+export interface VolumeSourceConfig {
+  type: 'volume'
+  code_folder: string
+  iac_folder: string
+}
+
+export interface GitHubSourceConfig {
+  type: 'github'
+  repo_url: string
+  branch: string
+  token?: string
+  code_folder: string
+  iac_folder: string
+}
+
+export interface DevOpsSourceConfig {
+  type: 'devops'
+  org_url: string
+  project: string
+  repo: string
+  branch: string
+  token: string
+  code_folder: string
+  iac_folder: string
+}
+
+export type SourceConfig = BlobSourceConfig | VolumeSourceConfig | GitHubSourceConfig | DevOpsSourceConfig
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  type: 'url' | 'stdio'
+  url?: string
+  enabled: boolean
+  cloud: string
+  /** Server URL is managed server-side (internal Docker service). UI shows toggle only. */
+  preconfigured?: boolean
+  /** Bearer token for authenticated MCP servers (passed via Anthropic MCP beta). */
+  authorization_token?: string
+}
+
 export interface AnalysisRequest {
   project_name: string
   source_cloud: 'aws' | 'azure' | 'gcp' | 'on-premises' | 'hybrid'
@@ -17,16 +86,216 @@ export interface AnalysisRequest {
   analysis_types: string[]
   code_artifacts: ArtifactItem[]
   iac_artifacts: ArtifactItem[]
+  source_config?: SourceConfig
   current_monthly_cost_usd?: number
   additional_context?: string
   use_foundry_mode?: boolean
+  mcp_servers?: McpServerConfig[]
+}
+
+export interface TwelveFactorItem {
+  factor: string
+  status: 'PASS' | 'PARTIAL' | 'FAIL' | 'N/A'
+  notes?: string
+}
+
+export interface OwaspFinding {
+  category: string
+  code: string   // A01–A10
+  status: 'FOUND' | 'RISK' | 'CLEAN' | 'N/A'
+  details?: string
+}
+
+export interface SolidItem {
+  principle: string
+  letter: string  // S O L I D
+  status: 'APPLIED' | 'PARTIAL' | 'VIOLATED' | 'N/A'
+  notes?: string
+}
+
+export interface McpAzureGuideline {
+  area: string
+  guideline: string
+  standard?: string
+  priority?: 'high' | 'medium' | 'low'
+}
+
+export interface CodeMcpGuidance {
+  azure_guidelines?: McpAzureGuideline[]
+  framework_guidance?: Record<string, string>
+  quick_wins?: string[]
+  tools_called?: string[]
+  raw_results?: Record<string, string>
+  parse_error?: boolean
+}
+
+export interface InfraMcpGuidance {
+  azure_guidelines?: McpAzureGuideline[]
+  service_guidance?: Record<string, string>
+  iac_best_practices?: string[]
+  tools_called?: string[]
+  raw_results?: Record<string, string>
+  parse_error?: boolean
+}
+
+export interface CodeAnalyzerData {
+  technology_inventory?: {
+    languages?: string[]
+    frameworks?: string[]
+    build_tools?: string[]
+    test_frameworks?: string[]
+    package_managers?: string[]
+  }
+  cloud_coupling?: {
+    sdks_detected?: string[]
+    services_referenced?: string[]
+    coupling_level?: string
+    migration_blockers?: string[]
+  }
+  architecture_patterns?: {
+    type?: string
+    patterns?: string[]
+    entry_points?: string[]
+    key_modules?: string[]
+  }
+  technical_debt?: {
+    estimated_days?: number
+    areas?: string[]
+    severity?: string
+  }
+  containerization_readiness?: {
+    score?: string
+    blockers?: string[]
+    recommendations?: string[]
+  }
+  migration_impact?: {
+    code_changes_required?: string[]
+    config_changes?: string[]
+    estimated_effort_days?: number
+  }
+  twelve_factor?: TwelveFactorItem[]
+  owasp_findings?: OwaspFinding[]
+  solid_assessment?: Record<string, SolidItem>
+  mcp_guidance?: CodeMcpGuidance
+  coupling_score?: string
+  summary?: string
+}
+
+export interface QualityAnalyzerData {
+  quality_gate?: { status?: string; passed?: boolean }
+  summary?: {
+    bugs?: number
+    vulnerabilities?: number
+    code_smells?: number
+    security_hotspots?: number
+    technical_debt?: string
+    coverage?: number
+    duplications?: number
+    reliability_rating?: string
+    security_rating?: string
+    maintainability_rating?: string
+  }
+  issues?: Array<{
+    type?: string
+    severity?: string
+    message?: string
+    component?: string
+    line?: number
+  }>
+  top_recommendations?: string[]
+  coverage_by_module?: any[]
+  total_issues?: number
+  reliability_rating?: string
+  security_rating?: string
+  maintainability_rating?: string
+  parse_error?: boolean
 }
 
 export interface AgentResultSummary {
   agent_name: string
-  status: 'success' | 'partial' | 'failed'
+  status: 'success' | 'partial' | 'failed' | 'skipped'
   duration_seconds: number
   error?: string
+  input_tokens?: number
+  output_tokens?: number
+  cost_eur?: number
+  data?: McpEnrichmentData | CodeAnalyzerData | QualityAnalyzerData | Record<string, unknown>
+}
+
+export interface McpServiceMapping {
+  source_service: string
+  source_tier?: string
+  azure_target: string
+  azure_sku?: string
+  migration_approach?: string
+  estimated_monthly_eur?: number
+  migration_complexity?: string
+  migration_steps?: string[]
+  azure_docs_url?: string
+}
+
+export interface McpInfraRecommendation {
+  area: string
+  priority: string
+  recommendation: string
+  rationale?: string
+  effort?: string
+}
+
+export interface McpMigrationPhase {
+  phase: number
+  name: string
+  duration_weeks: number
+  services_to_migrate?: string[]
+  key_activities?: string[]
+  risks?: string[]
+  dependencies?: string[]
+}
+
+export interface McpEnrichmentData {
+  migration_readiness?: {
+    overall_score?: string | number
+    suitability?: string
+    blockers?: string[]
+    recommendations?: string[]
+    dependencies_detected?: string[]
+    estimated_migration_effort_weeks?: number
+  }
+  azure_migrate_raw?: string
+  aws_to_azure_service_mapping?: McpServiceMapping[]
+  azure_pricing_estimate?: {
+    monthly_eur?: number
+    current_monthly_eur?: number
+    savings_pct?: number
+    breakdown?: Array<{ service: string; sku?: string; quantity?: string; monthly_eur?: number; notes?: string }>
+    cost_optimization_tips?: string[]
+    assumptions?: string[]
+  }
+  advisor_recommendations?: Array<{
+    category?: string
+    severity?: string
+    recommendation?: string
+    impact?: string
+    implementation_steps?: string[]
+  }>
+  waf_assessment?: Record<string, { score?: number; findings?: string[]; recommendations?: string[] }>
+  reference_architectures?: Array<{ name?: string; url?: string; fit_score?: number; description?: string; key_components?: string[] }>
+  service_guidance?: Record<string, { sku_recommendation?: string; sizing_notes?: string; migration_notes?: string; configuration_tips?: string[]; docs_url?: string; estimated_monthly_eur?: number }>
+  infrastructure_recommendations?: McpInfraRecommendation[]
+  migration_path?: {
+    recommended_approach?: string
+    rationale?: string
+    phases?: McpMigrationPhase[]
+    critical_path_items?: string[]
+    quick_wins?: string[]
+  }
+  best_practices?: string[]
+  devops_context?: { projects?: any[]; repos?: any[]; pipelines?: any[]; work_items?: any[]; ci_cd_maturity?: string; migration_items_found?: number }
+  azure_skills_called?: string[]
+  enrichment_quality?: string
+  enrichment_notes?: string
+  parse_error?: boolean
+  raw_text?: string
 }
 
 export interface AnalysisReport {
@@ -58,9 +327,66 @@ export interface AnalysisReport {
       objectives: string[]
       key_milestones: string[]
     }>
+    effort_detail?: Record<string, unknown>
+    app_recommendations?: Array<{
+      category?: string
+      priority?: string
+      recommendation?: string
+      rationale?: string
+      effort?: string
+      standard?: string
+    }>
+    infra_recommendations?: Array<{
+      category?: string
+      priority?: string
+      recommendation?: string
+      rationale?: string
+      effort?: string
+    }>
+    app_migration_checklist?: Array<{
+      item?: string
+      status?: string
+      category?: string
+      effort?: string
+    }>
   }
   agent_results: Record<string, AgentResultSummary>
   created_at: number
+  total_input_tokens?: number
+  total_output_tokens?: number
+  total_cost_eur?: number
+  sonarqube_analysis?: {
+    project_key?: string
+    project_name?: string
+    project_url?: string
+    error?: string
+    quality_gate?: {
+      status: string  // OK | ERROR | WARN | NONE
+      conditions?: Array<{ metric: string; status: string; actual?: string; threshold?: string }>
+    }
+    measures?: {
+      bugs?: number
+      vulnerabilities?: number
+      code_smells?: number
+      security_hotspots?: number
+      coverage?: number
+      duplication_pct?: number
+      technical_debt?: string
+      technical_debt_minutes?: number
+      ncloc?: number
+      reliability_rating?: string
+      security_rating?: string
+      sqale_rating?: string
+    }
+    issues?: Array<{
+      key: string
+      type: string
+      severity: string
+      message: string
+      component: string
+      line?: number
+    }>
+  }
 }
 
 export interface SessionStatus {
@@ -71,19 +397,110 @@ export interface SessionStatus {
   error?: string
 }
 
+// ── Demo mode detection ──────────────────────────────────────────────────────
+// Active when VITE_DEMO_MODE=true OR when no backend is reachable
+let _demoMode: boolean | null = null
+
+async function isDemoMode(): Promise<boolean> {
+  // Explicit env var takes priority
+  if (import.meta.env.VITE_DEMO_MODE === 'true') return true
+  if (import.meta.env.VITE_DEMO_MODE === 'false') return false
+
+  // Auto-detect: try to reach the backend health endpoint
+  if (_demoMode === null) {
+    try {
+      await axios.get('/health', { timeout: 2000 })
+      _demoMode = false
+    } catch {
+      _demoMode = true
+    }
+  }
+  return _demoMode
+}
+
+// ── Demo mode check (exported for use in pages) ──────────────────────────────
+export { isDemoMode }
+
+// ── Artifacts API (presign + direct upload) ──────────────────────────────────
+export const artifactsApi = {
+  /** Request a presigned PUT URL for a single file. */
+  presign: (body: PresignRequest) =>
+    api.post<PresignResponse>('/artifacts/presign', body),
+
+  /**
+   * Upload a File directly to the presigned URL (MinIO / Azure Blob).
+   * This call goes directly to the storage endpoint — NOT through the backend.
+   */
+  uploadDirect: async (uploadUrl: string, file: File): Promise<void> => {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    })
+    if (!res.ok) throw new Error(`Direct upload failed: ${res.status} ${res.statusText}`)
+  },
+
+  /** Delete an artifact by its storage key. */
+  delete: (key: string) =>
+    api.delete(`/artifacts/${encodeURIComponent(key)}`),
+
+  /**
+   * Upload files to the Docker volume (/app/uploads) for persistent reuse.
+   * Returns saved paths and the folder keys for the "Local Volume" tab.
+   */
+  uploadToVolume: async (
+    files: File[],
+    artifactType: 'code' | 'iac',
+    subfolder: string = '',
+  ) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    form.append('artifact_type', artifactType)
+    if (subfolder) form.append('subfolder', subfolder)
+    return api.post<{
+      saved: Array<{ filename: string; path: string; artifact_type: string; size_bytes: number }>
+      skipped: string[]
+      volume_code_folder: string
+      volume_iac_folder: string
+    }>('/artifacts/upload-to-volume', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+}
+
+// ── Public API (auto-routes to mock or real) ─────────────────────────────────
 export const analysisApi = {
-  start: (request: AnalysisRequest) =>
-    api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request),
+  /**
+   * Start an analysis.
+   * - Demo mode  → returns a fake full report immediately (mock)
+   * - Real mode  → starts async analysis, returns { session_id } for polling
+   */
+  start: async (request: AnalysisRequest) => {
+    if (await isDemoMode()) return mockAnalysisApi.start(request)
+    return api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request)
+  },
 
-  quickScan: (request: AnalysisRequest) =>
-    api.post<AnalysisReport>('/analysis/quick-scan', request),
+  /**
+   * Quick scan (demo mode only — real mode uses start() + polling via ReportPage).
+   */
+  quickScan: async (request: AnalysisRequest) => {
+    if (await isDemoMode()) return mockAnalysisApi.quickScan(request)
+    // Real backend: delegate to async start; caller must navigate to /report/:id
+    return api.post<{ session_id: string; status: string; message: string }>('/analysis/start', request)
+  },
 
-  getReport: (sessionId: string) =>
-    api.get<AnalysisReport>(`/analysis/${sessionId}`),
+  getReport: async (sessionId: string) => {
+    if (sessionId.startsWith('demo-') || await isDemoMode()) return mockAnalysisApi.getReport(sessionId)
+    return api.get<AnalysisReport>(`/analysis/${sessionId}`)
+  },
 
-  getStatus: (sessionId: string) =>
-    api.get<SessionStatus>(`/analysis/${sessionId}/status`),
+  getStatus: async (sessionId: string) => {
+    if (sessionId.startsWith('demo-') || await isDemoMode()) return mockAnalysisApi.getStatus(sessionId)
+    return api.get<SessionStatus>(`/analysis/${sessionId}/status`)
+  },
 
-  listSessions: () =>
-    api.get<SessionStatus[]>('/analysis/'),
+  listSessions: async () => {
+    if (await isDemoMode()) return mockAnalysisApi.listSessions()
+    return api.get<SessionStatus[]>('/analysis/')
+  },
 }

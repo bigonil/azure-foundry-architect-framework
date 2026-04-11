@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  CheckCircle2, XCircle, Clock, AlertTriangle, TrendingDown,
-  ChevronRight, Shield, Server, Code2, DollarSign, GitBranch,
-  BarChart3, Star, Loader2,
+  CheckCircle2, XCircle, AlertTriangle,
+  ChevronRight, Shield, ShieldCheck, Server, Code2, DollarSign, GitBranch,
+  BarChart3, Bug, ExternalLink, Activity, Zap, TrendingUp, Users, Clock,
+  Download, Printer, Loader2,
 } from 'lucide-react'
-import { analysisApi, type AnalysisReport } from '../services/api'
+import { analysisApi, type AnalysisReport, type SessionStatus, type McpEnrichmentData, type CodeAnalyzerData, type QualityAnalyzerData, type CodeMcpGuidance, type InfraMcpGuidance } from '../services/api'
 
 const WAF_COLORS: Record<string, string> = {
   critical: 'text-red-400 bg-red-500/10 border-red-500/30',
@@ -26,67 +27,148 @@ const IMPACT_COLORS: Record<string, string> = {
 const AGENT_ICONS: Record<string, any> = {
   code_analyzer: Code2,
   infra_analyzer: Server,
+  mcp_enrichment: Zap,
   cost_optimizer: DollarSign,
   migration_planner: GitBranch,
   gap_analyzer: BarChart3,
   waf_reviewer: Shield,
+  quality_analyzer: ShieldCheck,
 }
 
 export default function ReportPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const location = useLocation()
-  const [pollingEnabled, setPollingEnabled] = useState(true)
 
-  // If report was passed via navigation state (quick scan), use it directly
+  // Hooks must ALL be at the top — before any conditional returns
+  const reportRef = useRef<HTMLDivElement>(null)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
+
+  // If report was passed via navigation state (demo mode), use it directly
   const preloadedReport = location.state?.report as AnalysisReport | undefined
 
-  const { data: report, isLoading, error } = useQuery({
+  // -- Step 1: Poll /status every 3s while analysis is running -------------
+  const { data: statusData, error: statusError } = useQuery({
+    queryKey: ['status', sessionId],
+    queryFn: async () => {
+      const { data } = await analysisApi.getStatus(sessionId!)
+      return data
+    },
+    refetchInterval: (query) => {
+      const s = query.state.data?.status
+      return !s || s === 'running' ? 3000 : false
+    },
+    enabled: !!sessionId && !preloadedReport,
+  })
+
+  const isRunning = !preloadedReport && (!statusData || statusData.status === 'running')
+  const isFailed  = statusData?.status === 'failed'
+
+  // -- Step 2: Fetch report only once status = completed -------------------
+  const { data: report, isLoading: reportLoading, error: reportError } = useQuery({
     queryKey: ['report', sessionId],
     queryFn: async () => {
       if (preloadedReport) return preloadedReport
       const { data } = await analysisApi.getReport(sessionId!)
       return data
     },
-    refetchInterval: pollingEnabled ? 3000 : false,
-    enabled: !!sessionId,
+    enabled: !!preloadedReport || (!!sessionId && statusData?.status === 'completed'),
   })
 
-  useEffect(() => {
-    if (report?.status === 'completed' || report?.status === 'failed') {
-      setPollingEnabled(false)
-    }
-  }, [report])
-
-  if (isLoading && !preloadedReport) {
+  // -- Loading: still running -----------------------------------------------
+  if (isRunning) {
+    const elapsed = statusData?.elapsed_seconds
     return (
       <div className="flex flex-col items-center justify-center min-h-96 gap-4">
         <div className="relative">
           <div className="w-16 h-16 border-4 border-gray-700 rounded-full" />
           <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full absolute top-0 animate-spin" />
         </div>
-        <div className="text-gray-400">Running multi-agent analysis...</div>
-        <div className="text-xs text-gray-600">This may take a few minutes</div>
+        <div className="text-center">
+          <div className="text-gray-300 font-medium">Multi-Agent Analysis Running</div>
+          <div className="text-gray-500 text-sm mt-1">
+            {elapsed != null ? `${Math.round(elapsed)}s elapsed — ` : ''}checking every 3 seconds...
+          </div>
+        </div>
+        <div className="text-xs text-gray-600">Claude claude-opus-4-6 is analyzing your project</div>
       </div>
     )
   }
 
-  if (error || !report) {
+  // -- Error: analysis failed or network error ------------------------------
+  if (isFailed || statusError || reportError) {
+    const detail = (statusData as SessionStatus | undefined)?.error ?? (reportError as any)?.message ?? 'Unknown error'
     return (
       <div className="flex items-center gap-3 bg-red-900/20 border border-red-800 rounded-xl p-6">
         <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
         <div>
-          <div className="text-red-300 font-medium">Failed to load report</div>
-          <div className="text-red-400/70 text-sm mt-1">Session ID: {sessionId}</div>
+          <div className="text-red-300 font-medium">Analysis failed</div>
+          <div className="text-red-400/70 text-sm mt-1">{detail}</div>
         </div>
       </div>
     )
   }
 
+  // -- Loading: report fetch in flight -------------------------------------
+  if (reportLoading || !report) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-96 gap-4">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-gray-700 rounded-full" />
+          <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full absolute top-0 animate-spin" />
+        </div>
+        <div className="text-gray-400">Loading report...</div>
+      </div>
+    )
+  }
+
+  const downloadPdf = async () => {
+    const element = reportRef.current
+    if (!element) return
+    setGeneratingPdf(true)
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const canvas = await html2canvas(element, {
+        scale: 1.5,
+        backgroundColor: '#030712',
+        useCORS: true,
+        logging: false,
+      })
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const imgH = (canvas.height * pageW) / canvas.width
+      let remaining = imgH
+      let posY = 0
+      pdf.addImage(imgData, 'PNG', 0, posY, pageW, imgH)
+      remaining -= pageH
+      while (remaining > 0) {
+        posY -= pageH
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, posY, pageW, imgH)
+        remaining -= pageH
+      }
+      pdf.save(`${report.project_name}-analysis.pdf`)
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
+
+  const handlePrint = () => window.print()
+
   const synthesis = report.synthesis
-  const maturityScore = synthesis.maturity_score ?? 0
+  const rawScore = synthesis.maturity_score
+  const maturityScore = typeof rawScore === 'number' && rawScore > 0
+    ? rawScore
+    : typeof rawScore === 'string' && parseFloat(rawScore as string) > 0
+    ? parseFloat(rawScore as string)
+    : 0
 
   return (
-    <div className="space-y-8">
+    <div id="report-content" ref={reportRef} className="space-y-8">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -107,9 +189,40 @@ export default function ReportPage() {
           </div>
         </div>
 
-        <div className="text-right">
-          <div className="text-3xl font-bold text-white">{maturityScore.toFixed(1)}<span className="text-gray-500 text-lg">/5</span></div>
-          <div className="text-xs text-gray-500 mt-1">Maturity Score</div>
+        <div className="flex items-center gap-3">
+          {/* Print / PDF actions */}
+          <div className="flex items-center gap-2 no-print" data-no-print>
+            <button
+              onClick={handlePrint}
+              title="Print report"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Print
+            </button>
+            <button
+              onClick={downloadPdf}
+              disabled={generatingPdf}
+              title="Download as PDF"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-600/50 bg-blue-600/10 text-xs text-blue-400 hover:bg-blue-600/20 disabled:opacity-50 transition-colors"
+            >
+              {generatingPdf
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Download className="w-3.5 h-3.5" />}
+              {generatingPdf ? 'Generating…' : 'Download PDF'}
+            </button>
+          </div>
+
+          <div className="text-right">
+            <div className="text-3xl font-bold text-white">{maturityScore.toFixed(1)}<span className="text-gray-500 text-lg">/5</span></div>
+            <div className="text-xs text-gray-500 mt-1">Maturity Score</div>
+            <div
+              className="text-xs text-gray-600 mt-1 max-w-[220px] text-right leading-snug"
+              title="Calcolato da Claude su: qualità del codice (SonarCloud + analisi statica), grado di coupling con il cloud provider corrente, e complessità dell'infrastruttura. 1 = legacy/alto rischio · 5 = cloud-native/pronto alla migrazione"
+            >
+              Basato su qualità codice, coupling e complessità infra
+            </div>
+          </div>
         </div>
       </div>
 
@@ -122,6 +235,7 @@ export default function ReportPage() {
             return (
               <div
                 key={name}
+                title={result.input_tokens ? `${result.input_tokens}↑ ${result.output_tokens}↓ tokens · €${result.cost_eur?.toFixed(4)}` : undefined}
                 className={clsx(
                   'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm',
                   result.status === 'success'
@@ -140,7 +254,12 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Executive Summary */}
+      {/* -- Token & Cost Panel ------------------------------------------------- */}
+      {(report.total_input_tokens ?? 0) > 0 && (
+        <TokenCostPanel report={report} />
+      )}
+
+      {/* ── Executive Summary ────────────────────────────────────────────────── */}
       {synthesis.executive_summary && (
         <div className="bg-blue-950/40 border border-blue-800/50 rounded-xl p-6">
           <h2 className="text-sm font-semibold text-blue-300 uppercase tracking-wider mb-3">Executive Summary</h2>
@@ -180,10 +299,10 @@ export default function ReportPage() {
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
             <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Monthly Savings</div>
             <div className="text-3xl font-bold text-green-400">
-              ${synthesis.estimated_cost_savings_monthly_usd.toLocaleString()}
+              €{synthesis.estimated_cost_savings_monthly_usd.toLocaleString('it-IT')}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              ${(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString()}/year
+              €{(synthesis.estimated_cost_savings_monthly_usd * 12).toLocaleString('it-IT')}/year
             </div>
           </div>
         )}
@@ -274,6 +393,1718 @@ export default function ReportPage() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Migration Effort Detail */}
+      {synthesis.effort_detail && (
+        <EffortDetailSection effort={synthesis.effort_detail as EffortDetail} />
+      )}
+
+      {/* ── Application & Code ───────────────────────────────────────────────── */}
+      <AppAnalysisPanel report={report} />
+
+      {/* SonarCloud Static Analysis */}
+      <SonarCloudSection data={report.sonarqube_analysis} />
+
+      {/* Dev-focused actions */}
+      {(() => {
+        const devActions = (synthesis.top_10_actions ?? []).filter(
+          a => a.owner === 'dev_team' || a.owner === 'security_team'
+        )
+        if (!devActions.length) return null
+        return (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="w-4 h-4 text-blue-400" />
+              <h3 className="font-semibold text-white">Development Team Actions</h3>
+              <span className="text-xs text-gray-500">{devActions.length} actions</span>
+            </div>
+            <div className="space-y-2">
+              {devActions.map((action, i) => (
+                <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
+                  <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white mb-1">{action.action}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+                      )}>{action.impact}</span>
+                      <span className="text-[10px] text-gray-500">{action.timeline}</span>
+                      <span className="text-[10px] text-gray-500">{action.effort}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Infrastructure Recommendations from synthesis ────────────────────── */}
+      {(synthesis.infra_recommendations?.length ?? 0) > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Server className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Infrastructure Recommendations</h3>
+          </div>
+          <div className="space-y-2">
+            {synthesis.infra_recommendations!.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                    rec.priority === 'critical' ? 'text-red-400 bg-red-500/10'
+                      : rec.priority === 'high' ? 'text-orange-400 bg-orange-500/10'
+                      : rec.priority === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                      : 'text-green-400 bg-green-500/10'
+                  )}>{rec.priority ?? 'info'}</span>
+                  <div className="flex-1">
+                    {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category.replace(/_/g, ' ')}</div>}
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                    {rec.effort && <div className="text-[10px] text-blue-400/60 mt-0.5">{rec.effort}</div>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Azure MCP Infrastructure Guidance (Opzione B — infra_analyzer) ─── */}
+      {(() => {
+        const infraResult = report.agent_results?.infra_analyzer
+        const infraData = (infraResult?.data ?? {}) as Record<string, unknown>
+        const infraMcp = infraData.mcp_infra_guidance as InfraMcpGuidance | undefined
+        if (!infraMcp || (infraMcp.azure_guidelines?.length ?? 0) === 0) return null
+        return <InfraMcpGuidancePanel guidance={infraMcp} />
+      })()}
+
+      {/* ── Azure MCP Enrichment ────────────────────────────────────────────── */}
+      <McpEnrichmentPanel report={report} />
+
+      {/* Cloud team actions */}
+      {(() => {
+        const cloudActions = (synthesis.top_10_actions ?? []).filter(
+          a => a.owner === 'cloud_team'
+        )
+        if (!cloudActions.length) return null
+        return (
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Server className="w-4 h-4 text-blue-400" />
+              <h3 className="font-semibold text-white">Cloud Team Actions</h3>
+              <span className="text-xs text-gray-500">{cloudActions.length} actions</span>
+            </div>
+            <div className="space-y-2">
+              {cloudActions.map((action, i) => (
+                <div key={i} className="flex gap-3 items-start bg-gray-800 rounded-lg p-3">
+                  <span className="text-xs font-bold text-gray-500 w-5 shrink-0">{action.priority}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white mb-1">{action.action}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        action.impact === 'critical' ? 'text-red-400 bg-red-500/10' : action.impact === 'high' ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+                      )}>{action.impact}</span>
+                      <span className="text-[10px] text-gray-500">{action.timeline}</span>
+                      <span className="text-[10px] text-gray-500">{action.effort}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+    </div>
+  )
+}
+
+// -- Token & Cost panel -------------------------------------------------------
+
+function TokenCostPanel({ report }: { report: AnalysisReport }) {
+  const settings = { inputPer1M: 15, outputPer1M: 75, budgetEur: 100 }
+  const totalIn   = report.total_input_tokens ?? 0
+  const totalOut  = report.total_output_tokens ?? 0
+  const totalCost = report.total_cost_eur ?? 0
+  const budgetUsedPct = Math.min((totalCost / settings.budgetEur) * 100, 100)
+  const remaining = Math.max(settings.budgetEur - totalCost, 0)
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <Zap className="w-4 h-4 text-yellow-400" />
+        <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Token Usage &amp; Cost</h3>
+        <span className="text-xs text-gray-500">Claude claude-opus-4-6 · €15/M in · €75/M out</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-4">
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-blue-300">{(totalIn / 1000).toFixed(1)}<span className="text-sm font-normal text-gray-400 ml-0.5">K</span></div>
+          <div className="text-xs text-gray-500 mt-1">Input Tokens</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-green-300">{(totalOut / 1000).toFixed(1)}<span className="text-sm font-normal text-gray-400 ml-0.5">K</span></div>
+          <div className="text-xs text-gray-500 mt-1">Output Tokens</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-yellow-300">€{totalCost.toFixed(4)}</div>
+          <div className="text-xs text-gray-500 mt-1">Analysis Cost</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className={clsx('text-2xl font-bold', remaining < 10 ? 'text-red-400' : 'text-white')}>€{remaining.toFixed(2)}</div>
+          <div className="text-xs text-gray-500 mt-1">Remaining (€{settings.budgetEur} budget)</div>
+        </div>
+      </div>
+
+      {/* Budget bar */}
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs text-gray-500">
+          <span>Monthly budget used</span>
+          <span>{budgetUsedPct.toFixed(1)}%</span>
+        </div>
+        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className={clsx('h-full rounded-full transition-all', budgetUsedPct > 80 ? 'bg-red-500' : budgetUsedPct > 50 ? 'bg-yellow-500' : 'bg-green-500')}
+            style={{ width: `${budgetUsedPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Per-agent breakdown — always shown when agent_results exist */}
+      {Object.keys(report.agent_results).length > 0 && (
+        <div className="mt-4 space-y-1.5">
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Per-Agent Breakdown</div>
+          {Object.entries(report.agent_results).map(([name, r]) => {
+            const inTok   = r.input_tokens  ?? 0
+            const outTok  = r.output_tokens ?? 0
+            const agentCost = r.cost_eur ?? 0
+            const barPct = totalCost > 0 ? (agentCost / totalCost) * 100 : 0
+            const Icon = AGENT_ICONS[name] ?? CheckCircle2
+            const hasTokens = inTok > 0 || outTok > 0
+            return (
+              <div key={name} className="flex items-center gap-3">
+                <Icon className={clsx('w-3.5 h-3.5 flex-shrink-0', hasTokens ? 'text-gray-400' : 'text-gray-600')} />
+                <span className={clsx('text-xs w-32 truncate capitalize', hasTokens ? 'text-gray-400' : 'text-gray-600')}>
+                  {name.replace(/_/g, ' ')}
+                </span>
+                <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500/60 rounded-full" style={{ width: `${barPct}%` }} />
+                </div>
+                <span className={clsx('text-xs w-24 text-right', hasTokens ? 'text-gray-500' : 'text-gray-700')}>
+                  {(inTok / 1000).toFixed(1)}K↑ {(outTok / 1000).toFixed(1)}K↓
+                </span>
+                <span className={clsx('text-xs w-16 text-right', hasTokens ? 'text-yellow-400' : 'text-gray-700')}>
+                  {hasTokens ? `€${agentCost.toFixed(4)}` : '—'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Migration Effort Detail ---------------------------------------------------
+
+type EffortRole = { role: string; allocation_pct: number; person_days: number; daily_rate_eur: number; total_eur: number }
+type EffortPhase = { wave: number; name: string; person_days: number; hours: number; focus: string }
+type EffortComponent = { component: string; strategy: string; risk: string; base_days: number; final_days: number }
+
+type EffortDetail = {
+  total_person_days: number
+  total_hours: number
+  calculation_method: string
+  assumptions: string[]
+  roles: EffortRole[]
+  phases: EffortPhase[]
+  complexity_breakdown: EffortComponent[]
+  total_cost_eur: number
+}
+
+const RISK_COLORS: Record<string, string> = {
+  low: 'text-green-400 bg-green-500/10 border-green-500/30',
+  medium: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
+  high: 'text-red-400 bg-red-500/10 border-red-500/30',
+}
+
+function EffortDetailSection({ effort }: { effort: EffortDetail }) {
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+      {/* Header KPIs */}
+      <div className="flex items-center gap-2 mb-1">
+        <TrendingUp className="w-5 h-5 text-blue-400" />
+        <h3 className="font-semibold text-white">Migration Effort Breakdown</h3>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-3xl font-bold text-white">{effort.total_person_days}</div>
+          <div className="text-xs text-gray-500 mt-1">Person-Days</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-3xl font-bold text-white">{effort.total_hours.toLocaleString('it-IT')}</div>
+          <div className="text-xs text-gray-500 mt-1">Total Hours</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <div className="text-2xl font-bold text-green-400">€{effort.total_cost_eur?.toLocaleString('it-IT')}</div>
+          <div className="text-xs text-gray-500 mt-1">Labour Cost (EUR)</div>
+        </div>
+        <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+          <Clock className="w-5 h-5 text-blue-400 mx-auto mb-1" />
+          <div className="text-xs text-gray-400 leading-tight">{effort.calculation_method}</div>
+        </div>
+      </div>
+
+      {/* Assumptions */}
+      {effort.assumptions?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Assumptions</div>
+          <ul className="space-y-1">
+            {effort.assumptions.map((a, i) => (
+              <li key={i} className="text-sm text-gray-400 flex items-start gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-gray-600 mt-0.5 flex-shrink-0" />
+                {a}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Roles */}
+      {effort.roles?.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 text-gray-500" />
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Team Allocation</div>
+          </div>
+          <div className="space-y-2">
+            {effort.roles.map((r) => {
+              const barPct = effort.total_person_days > 0 ? (r.person_days / effort.total_person_days) * 100 : 0
+              return (
+                <div key={r.role} className="flex items-center gap-3">
+                  <span className="text-sm text-gray-300 w-48 flex-shrink-0">{r.role}</span>
+                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500/50 rounded-full" style={{ width: `${barPct}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-400 w-24 text-right">{r.person_days}d · {r.allocation_pct}%</span>
+                  <span className="text-xs text-green-400 w-24 text-right">€{r.total_eur?.toLocaleString('it-IT')}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Wave phases */}
+      {effort.phases?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Wave Planning</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {effort.phases.map((p) => (
+              <div key={p.wave} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                <div className="text-[10px] text-blue-400 uppercase tracking-wider">Wave {p.wave}</div>
+                <div className="font-medium text-white text-sm mt-1">{p.name}</div>
+                <div className="text-xs text-gray-400 mt-1">{p.person_days}d · {p.hours}h</div>
+                <div className="text-xs text-gray-600 mt-1 leading-tight">{p.focus}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Complexity breakdown */}
+      {effort.complexity_breakdown?.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Component Complexity</div>
+          <div className="space-y-1.5">
+            {effort.complexity_breakdown.map((c, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm">
+                <span className="text-gray-300 flex-1 truncate">{c.component}</span>
+                <span className="text-xs text-gray-500 capitalize">{c.strategy}</span>
+                <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded border', RISK_COLORS[c.risk] ?? RISK_COLORS.low)}>
+                  {c.risk}
+                </span>
+                <span className="text-xs text-gray-500 w-24 text-right">
+                  {c.base_days}d → <strong className="text-white">{c.final_days}d</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Azure MCP Code Guidance panel (Opzione B — code_analyzer) ---------------
+
+function CodeMcpGuidancePanel({ guidance }: { guidance: CodeMcpGuidance }) {
+  const guidelines = guidance.azure_guidelines ?? []
+  const frameworkGuidance = guidance.framework_guidance ?? {}
+  const quickWins = guidance.quick_wins ?? []
+  const toolsCalled = guidance.tools_called ?? []
+  const priorityColors: Record<string, string> = {
+    high: 'text-red-400 bg-red-500/10',
+    medium: 'text-yellow-400 bg-yellow-500/10',
+    low: 'text-green-400 bg-green-500/10',
+  }
+  return (
+    <div className="bg-gray-900 rounded-xl border border-blue-700/30 p-5 space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Zap className="w-4 h-4 text-blue-400" />
+        <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Azure App Guidelines</h3>
+        <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">via Azure MCP</span>
+        {toolsCalled.length > 0 && (
+          <div className="flex flex-wrap gap-1 ml-auto">
+            {toolsCalled.map(t => <span key={t} className="text-[10px] font-mono text-blue-300/60 bg-blue-900/20 border border-blue-800/30 px-1.5 py-0.5 rounded">{t}</span>)}
+          </div>
+        )}
+      </div>
+      {guidelines.length > 0 && (
+        <div className="space-y-1.5">
+          {guidelines.map((g, i) => (
+            <div key={i} className="flex items-start gap-2 bg-gray-800/50 rounded px-3 py-2">
+              <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0', priorityColors[g.priority ?? 'low'] ?? 'text-gray-400 bg-gray-700')}>{g.priority ?? '—'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-gray-500 uppercase font-semibold mb-0.5">{g.area}</div>
+                <div className="text-xs text-gray-300">{g.guideline}</div>
+                {g.standard && <span className="text-[10px] text-blue-400/50 italic mt-0.5 inline-block">{g.standard}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {Object.keys(frameworkGuidance).length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Framework Migration Notes</div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(frameworkGuidance).map(([fw, note]) => (
+              <div key={fw} className="bg-gray-800/40 rounded p-2.5">
+                <div className="text-[10px] text-blue-300/70 font-semibold mb-1">{fw}</div>
+                <div className="text-[10px] text-gray-400 leading-snug">{note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {quickWins.length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-green-400 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1"><Zap className="w-3 h-3" /> Quick Wins (&lt;1 week)</div>
+          {quickWins.map((w, i) => <div key={i} className="text-[10px] text-green-300/70 flex gap-1.5"><span>✓</span>{w}</div>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Azure MCP Infra Guidance panel (Opzione B — infra_analyzer) --------------
+
+function InfraMcpGuidancePanel({ guidance }: { guidance: InfraMcpGuidance }) {
+  const guidelines = guidance.azure_guidelines ?? []
+  const svcGuidance = guidance.service_guidance ?? {}
+  const iacBestPractices = guidance.iac_best_practices ?? []
+  const toolsCalled = guidance.tools_called ?? []
+  const priorityColors: Record<string, string> = {
+    high: 'text-red-400 bg-red-500/10',
+    medium: 'text-yellow-400 bg-yellow-500/10',
+    low: 'text-green-400 bg-green-500/10',
+  }
+  return (
+    <div className="bg-gray-900 rounded-xl border border-purple-700/30 p-5 space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Server className="w-4 h-4 text-purple-400" />
+        <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Azure Infrastructure Guidelines</h3>
+        <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">via Azure MCP</span>
+        {toolsCalled.length > 0 && (
+          <div className="flex flex-wrap gap-1 ml-auto">
+            {toolsCalled.map(t => <span key={t} className="text-[10px] font-mono text-purple-300/60 bg-purple-900/20 border border-purple-800/30 px-1.5 py-0.5 rounded">{t}</span>)}
+          </div>
+        )}
+      </div>
+      {guidelines.length > 0 && (
+        <div className="space-y-1.5">
+          {guidelines.map((g, i) => (
+            <div key={i} className="flex items-start gap-2 bg-gray-800/50 rounded px-3 py-2">
+              <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0', priorityColors[g.priority ?? 'low'] ?? 'text-gray-400 bg-gray-700')}>{g.priority ?? '—'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-gray-500 uppercase font-semibold mb-0.5">{g.area}</div>
+                <div className="text-xs text-gray-300">{g.guideline}</div>
+                {g.standard && <span className="text-[10px] text-purple-400/50 italic mt-0.5 inline-block">{g.standard}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {Object.keys(svcGuidance).length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Per-Service Azure Notes</div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(svcGuidance).map(([svc, note]) => (
+              <div key={svc} className="bg-gray-800/40 rounded p-2.5">
+                <div className="text-[10px] text-purple-300/70 font-semibold mb-1">{svc}</div>
+                <div className="text-[10px] text-gray-400 leading-snug">{note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {iacBestPractices.length > 0 && (
+        <div className="pt-3 border-t border-gray-800">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">IaC Best Practices</div>
+          {iacBestPractices.map((p, i) => (
+            <div key={i} className="text-[10px] text-gray-400 flex gap-1.5"><CheckCircle2 className="w-3 h-3 text-purple-400/60 shrink-0 mt-0.5" />{p}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- SonarCloud section component ---------------------------------------------
+
+const SEVERITY_COLORS: Record<string, string> = {
+  BLOCKER:  'text-red-400 bg-red-500/10 border-red-500/40',
+  CRITICAL: 'text-orange-400 bg-orange-500/10 border-orange-500/40',
+  MAJOR:    'text-yellow-400 bg-yellow-500/10 border-yellow-500/40',
+  MINOR:    'text-gray-400 bg-gray-700/40 border-gray-600/40',
+  INFO:     'text-gray-500 bg-gray-800 border-gray-700',
+}
+
+const RATING_COLORS: Record<string, string> = {
+  A: 'text-green-400 bg-green-500/10 border-green-500/30',
+  B: 'text-lime-400 bg-lime-500/10 border-lime-500/30',
+  C: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
+  D: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
+  E: 'text-red-400 bg-red-500/10 border-red-500/30',
+}
+
+function RatingBadge({ label, value }: { label: string; value?: string }) {
+  if (!value) return null
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className={clsx(
+        'w-9 h-9 rounded-lg border-2 flex items-center justify-center text-base font-bold',
+        RATING_COLORS[value] ?? 'text-gray-400 bg-gray-800 border-gray-700'
+      )}>
+        {value}
+      </div>
+      <span className="text-[10px] text-gray-500 uppercase tracking-wide">{label}</span>
+    </div>
+  )
+}
+
+function MetricTile({ label, value, unit, color }: {
+  label: string; value?: number | string | null; unit?: string; color?: string
+}) {
+  return (
+    <div className="bg-gray-800 rounded-lg px-4 py-3 text-center">
+      <div className={clsx('text-2xl font-bold', color ?? 'text-white')}>
+        {value ?? '—'}{unit && value != null ? <span className="text-sm font-normal text-gray-400 ml-0.5">{unit}</span> : null}
+      </div>
+      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  )
+}
+
+// -- MCP Enrichment Panel ──────────────────────────────────────────────────────
+
+function McpEnrichmentPanel({ report }: { report: AnalysisReport }) {
+  const enrichment = report.agent_results?.mcp_enrichment
+  if (!enrichment) return null
+
+  // Show a status banner when the agent didn't succeed
+  if (enrichment.status !== 'success') {
+    return (
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="w-4 h-4 text-gray-500" />
+          <span className="font-semibold text-gray-400">Azure MCP Enrichment</span>
+          <span className={clsx(
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider border',
+            enrichment.status === 'failed'
+              ? 'text-red-400 bg-red-500/10 border-red-500/30'
+              : 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+          )}>
+            {enrichment.status}
+          </span>
+        </div>
+        {enrichment.error && (
+          <div className="text-xs text-red-400/70 mt-1">{enrichment.error}</div>
+        )}
+        <div className="text-xs text-gray-600 mt-1">
+          Enable an Azure MCP server and run a new analysis to get live Azure data.
+        </div>
+      </div>
+    )
+  }
+
+  const data = (enrichment.data ?? {}) as McpEnrichmentData
+  const readiness    = data.migration_readiness ?? {}
+  const azMigrateRaw = data.azure_migrate_raw ?? ''
+  const svcMapArr    = data.aws_to_azure_service_mapping ?? []
+  const pricing      = data.azure_pricing_estimate ?? {}
+  const advisor      = data.advisor_recommendations ?? []
+  const waf          = data.waf_assessment ?? {}
+  const refArchs     = data.reference_architectures ?? []
+  const svcGuidance  = data.service_guidance ?? {}
+  const infraRecs    = data.infrastructure_recommendations ?? []
+  const migPath      = data.migration_path ?? {}
+  const practices    = data.best_practices ?? []
+  const skillsCalled = data.azure_skills_called ?? []
+  const quality      = data.enrichment_quality ?? 'unknown'
+  const notes        = data.enrichment_notes ?? ''
+
+  const wafPillars = ['reliability', 'security', 'cost_optimization', 'operational_excellence', 'performance_efficiency']
+  const wafColors: Record<number, string> = { 5: 'text-green-400', 4: 'text-blue-400', 3: 'text-yellow-400', 2: 'text-orange-400', 1: 'text-red-400' }
+  const priorityColors: Record<string, string> = { critical: 'text-red-400 bg-red-500/10', high: 'text-orange-400 bg-orange-500/10', medium: 'text-yellow-400 bg-yellow-500/10', low: 'text-green-400 bg-green-500/10' }
+  const complexityColors: Record<string, string> = { low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400' }
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-blue-800/40 p-6 space-y-6">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Zap className="w-4 h-4 text-blue-400" />
+          <span className="font-semibold text-white">Azure MCP Enrichment</span>
+          <span className="text-[10px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Live Azure Data
+          </span>
+          <span className={clsx(
+            'text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider border',
+            quality === 'high' ? 'text-green-400 bg-green-500/10 border-green-500/30'
+              : quality === 'medium' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+              : 'text-gray-400 bg-gray-700 border-gray-600'
+          )}>
+            Quality: {quality}
+          </span>
+          {skillsCalled.length > 0 && (
+            <span className="text-[10px] text-gray-500">{skillsCalled.length} skills called</span>
+          )}
+        </div>
+      </div>
+
+      {/* Skills called badges */}
+      {skillsCalled.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {skillsCalled.map((s) => (
+            <span key={s} className={clsx(
+              'text-[10px] px-1.5 py-0.5 rounded font-mono border',
+              s.includes('azuremigrate')
+                ? 'text-orange-300 bg-orange-900/20 border-orange-700/40 font-bold'
+                : s.includes('pricing')
+                ? 'text-green-300 bg-green-900/20 border-green-800/30'
+                : 'text-blue-300/70 bg-blue-900/20 border-blue-800/30'
+            )}>
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {notes && (
+        <div className="text-[11px] text-yellow-400/70 bg-yellow-900/10 border border-yellow-800/30 rounded px-3 py-2">{notes}</div>
+      )}
+
+      {/* ── 1. Azure Migrate Assessment ────────────────────────────────────── */}
+      {(readiness.overall_score != null || readiness.suitability || (readiness.blockers?.length ?? 0) > 0 || azMigrateRaw) && (
+        <div className="bg-blue-950/30 border border-blue-700/40 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-blue-300 uppercase tracking-wider font-semibold">Azure Migrate — Migration Readiness</span>
+          </div>
+          <div className="flex items-center gap-6 flex-wrap">
+            {readiness.overall_score != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Readiness Score</div>
+                <div className="text-3xl font-bold text-white">{readiness.overall_score}</div>
+              </div>
+            )}
+            {readiness.suitability && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Cloud Suitability</div>
+                <div className={clsx('text-sm font-semibold px-3 py-1 rounded-full border',
+                  readiness.suitability === 'cloud' ? 'text-green-300 bg-green-500/15 border-green-500/30'
+                    : readiness.suitability.includes('conditional') ? 'text-yellow-300 bg-yellow-500/15 border-yellow-500/30'
+                    : 'text-red-300 bg-red-500/15 border-red-500/30'
+                )}>
+                  {readiness.suitability}
+                </div>
+              </div>
+            )}
+            {readiness.estimated_migration_effort_weeks != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Estimated Effort</div>
+                <div className="text-lg font-bold text-blue-300">{readiness.estimated_migration_effort_weeks}w</div>
+              </div>
+            )}
+          </div>
+          {(readiness.blockers?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[10px] text-red-400/80 uppercase tracking-wider font-semibold mb-1.5 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Migration Blockers
+              </div>
+              <ul className="space-y-1">
+                {readiness.blockers!.map((b, i) => (
+                  <li key={i} className="text-xs text-red-300/80 flex gap-1.5 items-start">
+                    <span className="text-red-500 mt-0.5 shrink-0">✗</span>{b}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(readiness.recommendations?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1.5">Recommendations</div>
+              <ul className="space-y-1">
+                {readiness.recommendations!.map((r, i) => (
+                  <li key={i} className="text-xs text-gray-400 flex gap-1.5 items-start">
+                    <span className="text-blue-400 mt-0.5 shrink-0">›</span>{r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(readiness.dependencies_detected?.length ?? 0) > 0 && (
+            <div>
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Detected Dependencies</div>
+              <div className="flex flex-wrap gap-1">
+                {readiness.dependencies_detected!.map((d, i) => (
+                  <span key={i} className="text-[10px] text-gray-400 bg-gray-700/50 rounded px-1.5 py-0.5">{d}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {azMigrateRaw && (
+            <details className="mt-2">
+              <summary className="text-[10px] text-blue-400/70 cursor-pointer hover:text-blue-400 uppercase tracking-wider font-semibold select-none">
+                Raw Azure Migrate output ▾
+              </summary>
+              <pre className="mt-2 text-[10px] text-gray-400 bg-gray-900/50 rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap break-words">
+                {azMigrateRaw}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* ── 2. Source → Azure Service Mapping ──────────────────────────────── */}
+      {svcMapArr.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <GitBranch className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Source → Azure Service Mapping ({svcMapArr.length} services)
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-gray-700/50">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-700/50 bg-gray-800/60">
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Source Service</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Azure Target</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">SKU</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Approach</th>
+                  <th className="text-left px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Complexity</th>
+                  <th className="text-right px-3 py-2 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">€/mo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700/30">
+                {svcMapArr.map((s, i) => (
+                  <tr key={i} className="hover:bg-gray-800/30 transition-colors">
+                    <td className="px-3 py-2">
+                      <span className="font-mono text-orange-300/80">{s.source_service}</span>
+                      {s.source_tier && <span className="text-[10px] text-gray-600 ml-1">({s.source_tier})</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="text-blue-300 font-medium">{s.azure_target}</span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 font-mono text-[10px]">{s.azure_sku ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      {s.migration_approach && (
+                        <span className={clsx('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                          s.migration_approach.includes('lift') ? 'text-green-400 bg-green-500/10'
+                            : s.migration_approach.includes('re-arch') ? 'text-red-400 bg-red-500/10'
+                            : 'text-yellow-400 bg-yellow-500/10'
+                        )}>
+                          {s.migration_approach}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {s.migration_complexity && (
+                        <span className={clsx('font-semibold', complexityColors[s.migration_complexity] ?? 'text-gray-400')}>
+                          {s.migration_complexity}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {s.estimated_monthly_eur != null
+                        ? <span className="text-green-400 font-mono">€{Number(s.estimated_monthly_eur).toLocaleString()}</span>
+                        : <span className="text-gray-600">—</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Expandable migration steps per service */}
+          {svcMapArr.some(s => (s.migration_steps?.length ?? 0) > 0) && (
+            <details className="mt-2">
+              <summary className="text-[10px] text-blue-400/70 cursor-pointer hover:text-blue-400 uppercase tracking-wider font-semibold select-none">
+                Migration steps per service ▾
+              </summary>
+              <div className="mt-3 space-y-3">
+                {svcMapArr.filter(s => (s.migration_steps?.length ?? 0) > 0).map((s, i) => (
+                  <div key={i} className="bg-gray-800/40 rounded p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-mono text-orange-300/80">{s.source_service}</span>
+                      <ChevronRight className="w-3 h-3 text-gray-600" />
+                      <span className="text-[10px] text-blue-300">{s.azure_target}</span>
+                      {s.azure_docs_url && (
+                        <a href={s.azure_docs_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400/70 hover:text-blue-400 flex items-center gap-0.5 ml-auto">
+                          <ExternalLink className="w-2.5 h-2.5" /> Docs
+                        </a>
+                      )}
+                    </div>
+                    <ol className="space-y-0.5 list-decimal list-inside">
+                      {s.migration_steps!.map((step, j) => (
+                        <li key={j} className="text-[10px] text-gray-500">{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* ── 3. Pricing Estimate ────────────────────────────────────────────── */}
+      {(pricing.monthly_eur != null || (pricing.breakdown?.length ?? 0) > 0) && (
+        <div className="bg-gray-800/60 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-green-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Azure Cost Estimate (from Pricing API)</span>
+          </div>
+          <div className="flex items-end gap-6 flex-wrap">
+            <div>
+              <div className="text-[10px] text-gray-500 mb-0.5">Estimated Azure Monthly</div>
+              <div className="text-3xl font-bold text-green-400">
+                €{Number(pricing.monthly_eur ?? 0).toLocaleString()}
+                <span className="text-sm font-normal text-gray-400">/mo</span>
+              </div>
+            </div>
+            {pricing.current_monthly_eur != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Current (source cloud)</div>
+                <div className="text-xl font-bold text-gray-400">
+                  €{Number(pricing.current_monthly_eur).toLocaleString()}<span className="text-sm font-normal">/mo</span>
+                </div>
+              </div>
+            )}
+            {pricing.savings_pct != null && (
+              <div>
+                <div className="text-[10px] text-gray-500 mb-0.5">Estimated Savings</div>
+                <div className={clsx('text-xl font-bold', Number(pricing.savings_pct) > 0 ? 'text-green-400' : 'text-red-400')}>
+                  {Number(pricing.savings_pct) > 0 ? '+' : ''}{pricing.savings_pct}%
+                </div>
+              </div>
+            )}
+          </div>
+          {(pricing.breakdown?.length ?? 0) > 0 && (
+            <div className="space-y-1 pt-2 border-t border-gray-700/50">
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-2">Line-Item Breakdown</div>
+              {pricing.breakdown!.map((b, i) => (
+                <div key={i} className="flex justify-between items-start text-xs gap-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-gray-300">{b.service}</span>
+                    {b.sku && <span className="text-gray-600 ml-1 font-mono text-[10px]">({b.sku})</span>}
+                    {b.quantity && <span className="text-gray-600 ml-1 text-[10px]">× {b.quantity}</span>}
+                    {b.notes && <div className="text-[10px] text-gray-600 mt-0.5">{b.notes}</div>}
+                  </div>
+                  <span className="text-green-400 font-mono shrink-0">€{Number(b.monthly_eur ?? 0).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {(pricing.cost_optimization_tips?.length ?? 0) > 0 && (
+            <div className="pt-2 border-t border-gray-700/50">
+              <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Cost Optimization Tips</div>
+              {pricing.cost_optimization_tips!.map((t, i) => (
+                <div key={i} className="text-[10px] text-gray-500 flex gap-1.5"><span className="text-green-500 shrink-0">↓</span>{t}</div>
+              ))}
+            </div>
+          )}
+          {(pricing.assumptions?.length ?? 0) > 0 && (
+            <details>
+              <summary className="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400 uppercase tracking-wider font-semibold select-none">
+                Assumptions ▾
+              </summary>
+              <div className="mt-1 space-y-0.5">
+                {pricing.assumptions!.map((a, i) => (
+                  <div key={i} className="text-[10px] text-gray-600">• {a}</div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* ── 4. WAF Assessment ──────────────────────────────────────────────── */}
+      {Object.keys(waf).length > 0 && (
+        <div className="bg-gray-800/60 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="w-4 h-4 text-purple-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Well-Architected Framework Assessment</span>
+          </div>
+          <div className="grid grid-cols-5 gap-2 mb-4">
+            {wafPillars.map((pillar) => {
+              const p = waf[pillar] ?? {}
+              const score = p.score ?? 0
+              return (
+                <div key={pillar} className="text-center bg-gray-900/50 rounded-lg p-2">
+                  <div className={clsx('text-2xl font-bold', wafColors[score] ?? 'text-gray-400')}>{score || '—'}</div>
+                  <div className="text-[9px] text-gray-500 mt-0.5 capitalize leading-tight">{pillar.replace(/_/g, ' ')}</div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="space-y-3">
+            {wafPillars.map((pillar) => {
+              const p = waf[pillar] ?? {}
+              const findings = p.findings ?? []
+              const recs = p.recommendations ?? []
+              if (!findings.length && !recs.length) return null
+              return (
+                <details key={pillar}>
+                  <summary className="text-[10px] text-gray-500 cursor-pointer hover:text-gray-300 uppercase tracking-wider font-semibold capitalize select-none">
+                    {pillar.replace(/_/g, ' ')} {p.score != null ? `(${p.score}/5)` : ''} ▾
+                  </summary>
+                  <div className="mt-2 pl-2 space-y-1.5 border-l border-gray-700/50">
+                    {findings.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-gray-600 font-semibold mb-0.5">Findings</div>
+                        {findings.map((f: string, i: number) => (
+                          <div key={i} className="text-[10px] text-gray-500 flex gap-1"><span>•</span>{f}</div>
+                        ))}
+                      </div>
+                    )}
+                    {recs.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-blue-500/70 font-semibold mb-0.5">Recommendations</div>
+                        {recs.map((r: string, i: number) => (
+                          <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-blue-400">›</span>{r}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Advisor Recommendations ────────────────────────────────────── */}
+      {advisor.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-4 h-4 text-orange-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Azure Advisor Recommendations ({advisor.length})
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {advisor.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0 mt-0.5',
+                    rec.severity === 'high' ? 'text-red-400 bg-red-500/10'
+                      : rec.severity === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                      : 'text-green-400 bg-green-500/10'
+                  )}>{rec.severity ?? 'info'}</span>
+                  <div className="flex-1 min-w-0">
+                    {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category}</div>}
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.impact && <div className="text-[10px] text-gray-500 mt-0.5">Impact: {rec.impact}</div>}
+                  </div>
+                </div>
+                {(rec.implementation_steps?.length ?? 0) > 0 && (
+                  <details className="mt-2 pl-8">
+                    <summary className="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400 select-none">Implementation steps ▾</summary>
+                    <ol className="mt-1 space-y-0.5 list-decimal list-inside">
+                      {rec.implementation_steps!.map((s: string, j: number) => (
+                        <li key={j} className="text-[10px] text-gray-500">{s}</li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 6. Infrastructure Recommendations ─────────────────────────────── */}
+      {infraRecs.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Server className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Infrastructure Recommendations ({infraRecs.length})
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {infraRecs.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                    priorityColors[rec.priority] ?? 'text-gray-400 bg-gray-700'
+                  )}>{rec.priority}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.area}</div>
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                    {rec.effort && <div className="text-[10px] text-blue-400/60 mt-0.5">Effort: {rec.effort}</div>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 7. Migration Path ──────────────────────────────────────────────── */}
+      {(migPath.phases?.length ?? 0) > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <GitBranch className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Migration Path</span>
+            {migPath.recommended_approach && (
+              <span className="text-[10px] text-blue-300 bg-blue-900/20 border border-blue-800/30 px-2 py-0.5 rounded-full">
+                {migPath.recommended_approach}
+              </span>
+            )}
+          </div>
+          {migPath.rationale && (
+            <div className="text-xs text-gray-500 mb-3">{migPath.rationale}</div>
+          )}
+          <div className="space-y-2">
+            {migPath.phases!.map((phase) => (
+              <details key={phase.phase} className="bg-gray-800/60 rounded-lg">
+                <summary className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none hover:bg-gray-800 rounded-lg transition-colors">
+                  <span className="w-6 h-6 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-[10px] text-blue-300 font-bold shrink-0">
+                    {phase.phase}
+                  </span>
+                  <span className="text-sm font-medium text-white flex-1">{phase.name}</span>
+                  <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />{phase.duration_weeks}w
+                  </span>
+                </summary>
+                <div className="px-4 pb-3 space-y-2 border-t border-gray-700/40 pt-3">
+                  {(phase.services_to_migrate?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] text-gray-600 uppercase font-semibold mb-1">Services</div>
+                      <div className="flex flex-wrap gap-1">
+                        {phase.services_to_migrate!.map((s, i) => (
+                          <span key={i} className="text-[10px] text-blue-300/70 bg-blue-900/20 border border-blue-800/30 rounded px-1.5 py-0.5">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(phase.key_activities?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] text-gray-600 uppercase font-semibold mb-1">Key Activities</div>
+                      {phase.key_activities!.map((a, i) => (
+                        <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-blue-400">›</span>{a}</div>
+                      ))}
+                    </div>
+                  )}
+                  {(phase.risks?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] text-red-500/70 uppercase font-semibold mb-1">Risks</div>
+                      {phase.risks!.map((r, i) => (
+                        <div key={i} className="text-[10px] text-red-300/60 flex gap-1"><span>⚠</span>{r}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+          {(migPath.quick_wins?.length ?? 0) > 0 && (
+            <div className="mt-3 bg-green-900/10 border border-green-800/30 rounded-lg p-3">
+              <div className="text-[10px] text-green-400 uppercase font-semibold mb-1.5 flex items-center gap-1">
+                <Zap className="w-3 h-3" /> Quick Wins (&lt;2 weeks)
+              </div>
+              {migPath.quick_wins!.map((w, i) => (
+                <div key={i} className="text-[10px] text-green-300/70 flex gap-1.5"><span>✓</span>{w}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 8. Reference Architectures ────────────────────────────────────── */}
+      {refArchs.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart3 className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Reference Architectures ({refArchs.length})
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {refArchs.map((arch, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-xs font-medium text-white leading-snug">{arch.name}</div>
+                  {arch.fit_score != null && (
+                    <div className="text-[10px] text-blue-400 font-semibold shrink-0">Fit {arch.fit_score}/5</div>
+                  )}
+                </div>
+                <div className="text-[10px] text-gray-500 leading-snug">{arch.description}</div>
+                {(arch.key_components?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {arch.key_components!.map((c: string, j: number) => (
+                      <span key={j} className="text-[10px] text-gray-500 bg-gray-700/50 rounded px-1 py-0.5">{c}</span>
+                    ))}
+                  </div>
+                )}
+                {arch.url && (
+                  <a href={arch.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">
+                    <ExternalLink className="w-2.5 h-2.5" /> Microsoft Learn
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 9. Per-Service Azure Guidance ─────────────────────────────────── */}
+      {Object.keys(svcGuidance).length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Server className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Per-Service Azure Guidance ({Object.keys(svcGuidance).length})
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(svcGuidance).map(([svc, g]) => (
+              <div key={svc} className="bg-gray-800/60 rounded-lg p-3 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-xs font-semibold text-blue-300">{svc}</div>
+                  {g.estimated_monthly_eur != null && (
+                    <span className="text-[10px] text-green-400 font-mono shrink-0">€{Number(g.estimated_monthly_eur).toLocaleString()}/mo</span>
+                  )}
+                </div>
+                {g.sku_recommendation && (
+                  <div className="text-[10px] text-gray-400 font-mono bg-gray-900/40 rounded px-2 py-0.5">{g.sku_recommendation}</div>
+                )}
+                {g.sizing_notes && (
+                  <div className="text-[10px] text-gray-500">{g.sizing_notes}</div>
+                )}
+                {g.migration_notes && (
+                  <div className="text-[10px] text-gray-400 leading-snug">{g.migration_notes}</div>
+                )}
+                {(g.configuration_tips?.length ?? 0) > 0 && (
+                  <ul className="space-y-0.5">
+                    {(g.configuration_tips as string[]).map((t: string, i: number) => (
+                      <li key={i} className="text-[10px] text-gray-500 flex gap-1"><span className="text-blue-400/60">•</span>{t}</li>
+                    ))}
+                  </ul>
+                )}
+                {g.docs_url && (
+                  <a href={g.docs_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-1">
+                    <ExternalLink className="w-2.5 h-2.5" /> Docs
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 10. Best Practices ────────────────────────────────────────────── */}
+      {practices.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle2 className="w-4 h-4 text-green-400" />
+            <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+              Azure Best Practices ({practices.length})
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {practices.map((p, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs text-gray-400">
+                <CheckCircle2 className="w-3 h-3 text-green-400/70 mt-0.5 shrink-0" />
+                {p}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- App Analysis Panel -------------------------------------------------------
+
+function AppAnalysisPanel({ report }: { report: AnalysisReport }) {
+  const codeResult = report.agent_results?.code_analyzer
+  const qualResult = report.agent_results?.quality_analyzer
+  const synthesis = report.synthesis
+
+  const code = (codeResult?.data ?? {}) as CodeAnalyzerData
+  const qual = (qualResult?.data ?? {}) as QualityAnalyzerData
+
+  const appRecs = synthesis.app_recommendations ?? []
+  const checklist = synthesis.app_migration_checklist ?? []
+
+  const ratingColor = (r: string | undefined) => {
+    if (!r) return 'text-gray-400'
+    const colors: Record<string, string> = { A: 'text-green-400', B: 'text-blue-400', C: 'text-yellow-400', D: 'text-orange-400', E: 'text-red-400' }
+    return colors[r.toUpperCase()] ?? 'text-gray-400'
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Technology Inventory */}
+      {(code.technology_inventory || code.coupling_score) && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Code2 className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Code Analysis</h3>
+            {code.coupling_score && (
+              <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full border ml-2',
+                code.coupling_score === 'LOW' ? 'text-green-400 bg-green-500/10 border-green-500/30'
+                  : code.coupling_score === 'MEDIUM' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+                  : 'text-red-400 bg-red-500/10 border-red-500/30'
+              )}>
+                Cloud Coupling: {code.coupling_score}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Tech inventory */}
+            <div className="space-y-3">
+              {(code.technology_inventory?.languages?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Languages</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.technology_inventory!.languages!.map((l, i) => (
+                      <span key={i} className="text-xs text-blue-300 bg-blue-900/20 border border-blue-800/30 rounded px-2 py-0.5">{l}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(code.technology_inventory?.frameworks?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Frameworks</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.technology_inventory!.frameworks!.map((f, i) => (
+                      <span key={i} className="text-xs text-gray-400 bg-gray-700/50 border border-gray-700 rounded px-2 py-0.5">{f}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(code.technology_inventory?.build_tools?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1.5">Build Tools</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.technology_inventory!.build_tools!.map((t, i) => (
+                      <span key={i} className="text-xs text-gray-500 bg-gray-800 rounded px-2 py-0.5">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Cloud coupling + arch */}
+            <div className="space-y-3">
+              {(code.cloud_coupling?.sdks_detected?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-[10px] text-orange-500/70 uppercase tracking-wider font-semibold mb-1.5">Cloud SDKs Detected</div>
+                  <div className="flex flex-wrap gap-1">
+                    {code.cloud_coupling!.sdks_detected!.map((s, i) => (
+                      <span key={i} className="text-xs text-orange-300/70 bg-orange-900/20 border border-orange-800/30 rounded px-2 py-0.5">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {code.architecture_patterns?.type && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Architecture</div>
+                  <div className="text-sm text-gray-300">{code.architecture_patterns.type}</div>
+                  {(code.architecture_patterns.patterns?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {code.architecture_patterns.patterns!.map((p, i) => (
+                        <span key={i} className="text-xs text-gray-500 bg-gray-800 rounded px-1.5 py-0.5">{p}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {code.containerization_readiness?.score && (
+                <div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-1">Container Readiness</div>
+                  <div className="text-sm text-gray-300">{code.containerization_readiness.score}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Technical Debt */}
+          {code.technical_debt && (Object.keys(code.technical_debt).length > 0) && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-yellow-500/70 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Technical Debt
+              </div>
+              <div className="flex items-center gap-4">
+                {code.technical_debt.estimated_days != null && (
+                  <div>
+                    <div className="text-[10px] text-gray-600 mb-0.5">Estimated</div>
+                    <div className="text-lg font-bold text-yellow-400">{code.technical_debt.estimated_days}d</div>
+                  </div>
+                )}
+                {code.technical_debt.severity && (
+                  <div>
+                    <div className="text-[10px] text-gray-600 mb-0.5">Severity</div>
+                    <div className="text-sm font-semibold text-yellow-300">{code.technical_debt.severity}</div>
+                  </div>
+                )}
+              </div>
+              {(code.technical_debt.areas?.length ?? 0) > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {code.technical_debt.areas!.map((a, i) => (
+                    <span key={i} className="text-[10px] text-yellow-300/60 bg-yellow-900/10 border border-yellow-800/20 rounded px-1.5 py-0.5">{a}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Migration Impact */}
+          {code.migration_impact && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Migration Impact on Codebase</div>
+              <div className="grid grid-cols-2 gap-3">
+                {(code.migration_impact.code_changes_required?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-[10px] text-red-500/70 font-semibold mb-1">Code Changes Required</div>
+                    {code.migration_impact.code_changes_required!.map((c, i) => (
+                      <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-red-400">•</span>{c}</div>
+                    ))}
+                  </div>
+                )}
+                {(code.migration_impact.config_changes?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-[10px] text-blue-500/70 font-semibold mb-1">Config Changes</div>
+                    {code.migration_impact.config_changes!.map((c, i) => (
+                      <div key={i} className="text-[10px] text-gray-400 flex gap-1"><span className="text-blue-400">•</span>{c}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {code.cloud_coupling?.migration_blockers && (code.cloud_coupling.migration_blockers.length ?? 0) > 0 && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-red-400/80 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Code-Level Migration Blockers
+              </div>
+              {code.cloud_coupling.migration_blockers.map((b, i) => (
+                <div key={i} className="text-xs text-red-300/70 flex gap-1.5 items-start">
+                  <span className="text-red-500 shrink-0">✗</span>{b}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 12-Factor App Compliance */}
+      {(code.twelve_factor?.length ?? 0) > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">12-Factor App Compliance</h3>
+            <span className="text-xs text-gray-500">
+              {code.twelve_factor!.filter(f => f.status === 'PASS').length}/{code.twelve_factor!.length} passed
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {code.twelve_factor!.map((f, i) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800/40 rounded px-2.5 py-2">
+                <span className={clsx('text-[10px] font-bold shrink-0 mt-0.5 w-8',
+                  f.status === 'PASS'    ? 'text-green-400'
+                  : f.status === 'PARTIAL' ? 'text-yellow-400'
+                  : f.status === 'FAIL'    ? 'text-red-400'
+                  : 'text-gray-500'
+                )}>{f.status}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-300 font-medium leading-snug">{f.factor}</div>
+                  {f.notes && <div className="text-[10px] text-gray-600 mt-0.5 leading-snug">{f.notes}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* OWASP Top 10 */}
+      {(code.owasp_findings?.length ?? 0) > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-red-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">OWASP Top 10 — 2021</h3>
+            <span className="text-xs text-red-400/70">
+              {code.owasp_findings!.filter(f => f.status === 'FOUND').length} found
+            </span>
+          </div>
+          <div className="space-y-1">
+            {code.owasp_findings!.map((f, i) => (
+              <div key={i} className={clsx(
+                'flex items-start gap-2 rounded px-2.5 py-2',
+                f.status === 'FOUND' ? 'bg-red-900/20 border border-red-800/30'
+                : f.status === 'RISK' ? 'bg-yellow-900/10 border border-yellow-800/20'
+                : 'bg-gray-800/30'
+              )}>
+                <span className="text-[10px] font-mono text-gray-500 shrink-0 mt-0.5 w-7">{f.code}</span>
+                <span className={clsx('text-[10px] font-bold shrink-0 mt-0.5 w-12',
+                  f.status === 'FOUND' ? 'text-red-400'
+                  : f.status === 'RISK'  ? 'text-yellow-400'
+                  : f.status === 'CLEAN' ? 'text-green-400'
+                  : 'text-gray-500'
+                )}>{f.status}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-300 font-medium">{f.category}</div>
+                  {f.details && <div className="text-[10px] text-gray-500 mt-0.5 leading-snug">{f.details}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SOLID Principles */}
+      {code.solid_assessment && Object.keys(code.solid_assessment).length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">SOLID Principles</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5">
+            {Object.values(code.solid_assessment).map((item, i) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800/40 rounded px-2.5 py-2">
+                <span className="text-sm font-black text-purple-400/70 shrink-0 w-5">{item.letter}</span>
+                <span className={clsx('text-[10px] font-bold shrink-0 mt-0.5 w-16',
+                  item.status === 'APPLIED'  ? 'text-green-400'
+                  : item.status === 'PARTIAL'  ? 'text-yellow-400'
+                  : item.status === 'VIOLATED' ? 'text-red-400'
+                  : 'text-gray-500'
+                )}>{item.status}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-gray-300 font-medium">{item.principle}</div>
+                  {item.notes && <div className="text-[10px] text-gray-500 mt-0.5">{item.notes}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Azure MCP Code Guidance (Opzione B) */}
+      {code.mcp_guidance && (code.mcp_guidance.azure_guidelines?.length ?? 0) > 0 && (
+        <CodeMcpGuidancePanel guidance={code.mcp_guidance} />
+      )}
+
+      {/* Quality Analyzer Results */}
+      {qual && Object.keys(qual).length > 0 && !qual.parse_error && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-green-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Code Quality Analysis</h3>
+            {qual.quality_gate?.status && (
+              <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full border',
+                qual.quality_gate.status === 'OK' || qual.quality_gate.passed
+                  ? 'text-green-400 bg-green-500/10 border-green-500/30'
+                  : 'text-red-400 bg-red-500/10 border-red-500/30'
+              )}>
+                Gate: {qual.quality_gate.status}
+              </span>
+            )}
+          </div>
+
+          {/* Ratings */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Reliability', val: qual.reliability_rating ?? qual.summary?.reliability_rating },
+              { label: 'Security', val: qual.security_rating ?? qual.summary?.security_rating },
+              { label: 'Maintainability', val: qual.maintainability_rating ?? qual.summary?.maintainability_rating },
+            ].map(({ label, val }) => (
+              <div key={label} className="bg-gray-800 rounded-lg p-3 text-center">
+                <div className={clsx('text-2xl font-bold', ratingColor(val))}>{val ?? '—'}</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary metrics */}
+          {qual.summary && (
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: 'Bugs', val: qual.summary.bugs, color: 'text-red-400' },
+                { label: 'Vulnerabilities', val: qual.summary.vulnerabilities, color: 'text-orange-400' },
+                { label: 'Code Smells', val: qual.summary.code_smells, color: 'text-yellow-400' },
+                { label: 'Hotspots', val: qual.summary.security_hotspots, color: 'text-purple-400' },
+              ].map(({ label, val, color }) => (
+                <div key={label} className="bg-gray-800 rounded-lg p-2.5 text-center">
+                  <div className={clsx('text-xl font-bold', color)}>{val ?? '—'}</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Top recommendations from quality_analyzer */}
+          {(qual.top_recommendations?.length ?? 0) > 0 && (
+            <div className="pt-3 border-t border-gray-800">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Quality Recommendations</div>
+              {qual.top_recommendations!.map((r, i) => (
+                <div key={i} className="text-xs text-gray-400 flex gap-1.5 items-start mb-1">
+                  <CheckCircle2 className="w-3 h-3 text-green-400/70 mt-0.5 shrink-0" />{r}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* App Recommendations from synthesis */}
+      {appRecs.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Application Recommendations</h3>
+            <span className="text-xs text-gray-500">{appRecs.length} items</span>
+          </div>
+          <div className="space-y-2">
+            {appRecs.map((rec, i) => (
+              <div key={i} className="bg-gray-800/60 rounded-lg px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                    rec.priority === 'critical' ? 'text-red-400 bg-red-500/10'
+                      : rec.priority === 'high' ? 'text-orange-400 bg-orange-500/10'
+                      : rec.priority === 'medium' ? 'text-yellow-400 bg-yellow-500/10'
+                      : 'text-green-400 bg-green-500/10'
+                  )}>{rec.priority ?? 'info'}</span>
+                  <div className="flex-1 min-w-0">
+                    {rec.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{rec.category.replace(/_/g, ' ')}</div>}
+                    <div className="text-xs text-gray-300">{rec.recommendation}</div>
+                    {rec.rationale && <div className="text-[10px] text-gray-500 mt-0.5">{rec.rationale}</div>}
+                    <div className="flex items-center gap-3 mt-1">
+                      {rec.effort && <span className="text-[10px] text-blue-400/60 flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{rec.effort}</span>}
+                      {rec.standard && <span className="text-[10px] text-gray-600 italic">{rec.standard}</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Migration Checklist */}
+      {checklist.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Application Migration Checklist</h3>
+            <span className="text-xs text-gray-500">{checklist.length} items</span>
+          </div>
+          <div className="space-y-1.5">
+            {checklist.map((item, i) => (
+              <div key={i} className="flex items-start gap-2 bg-gray-800/40 rounded px-3 py-2">
+                <span className={clsx('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0',
+                  item.status === 'required' ? 'text-red-400 bg-red-500/10'
+                    : item.status === 'recommended' ? 'text-yellow-400 bg-yellow-500/10'
+                    : 'text-gray-400 bg-gray-700'
+                )}>{item.status ?? 'optional'}</span>
+                <div className="flex-1 min-w-0">
+                  {item.category && <div className="text-[10px] text-gray-600 uppercase mb-0.5">{item.category.replace(/_/g, ' ')}</div>}
+                  <div className="text-xs text-gray-300">{item.item}</div>
+                  {item.effort && <div className="text-[10px] text-blue-400/60 mt-0.5 flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{item.effort}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- SonarCloud section component ---------------------------------------------
+
+function SonarCloudSection({ data }: { data?: AnalysisReport['sonarqube_analysis'] }) {
+  if (!data) return null
+
+  // Project not found or token not configured — show informational notice
+  if (data.error) {
+    return (
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Activity className="w-4 h-4 text-gray-500" />
+          <h3 className="font-semibold text-gray-400">SonarCloud Static Analysis</h3>
+        </div>
+        <p className="text-sm text-gray-500">{data.error}</p>
+      </div>
+    )
+  }
+
+  const m = data.measures ?? {}
+  const qg = data.quality_gate
+  const qgOk = qg?.status === 'OK'
+  const issues = data.issues ?? []
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity className="w-5 h-5 text-orange-400" />
+          <h3 className="font-semibold text-white">SonarCloud Static Analysis</h3>
+          <span className="text-xs text-gray-500">{data.project_key}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Quality Gate badge */}
+          <div className={clsx(
+            'flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold',
+            qgOk
+              ? 'bg-green-500/10 border-green-500/30 text-green-400'
+              : 'bg-red-500/10 border-red-500/30 text-red-400'
+          )}>
+            {qgOk ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+            Quality Gate: {qg?.status ?? 'UNKNOWN'}
+          </div>
+          {data.project_url && (
+            <a
+              href={data.project_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open in SonarCloud
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Ratings row */}
+      <div className="flex items-center gap-6">
+        <RatingBadge label="Reliability" value={m.reliability_rating} />
+        <RatingBadge label="Security" value={m.security_rating} />
+        <RatingBadge label="Maintain." value={m.sqale_rating} />
+        <div className="h-10 w-px bg-gray-700 mx-2" />
+        <span className="text-xs text-gray-500">
+          A = best &nbsp;·&nbsp; E = worst
+        </span>
+      </div>
+
+      {/* Metrics grid */}
+      <div className="grid grid-cols-4 gap-3">
+        <MetricTile
+          label="Bugs"
+          value={m.bugs}
+          color={m.bugs && m.bugs > 0 ? 'text-red-400' : 'text-green-400'}
+        />
+        <MetricTile
+          label="Vulnerabilities"
+          value={m.vulnerabilities}
+          color={m.vulnerabilities && m.vulnerabilities > 0 ? 'text-orange-400' : 'text-green-400'}
+        />
+        <MetricTile
+          label="Security Hotspots"
+          value={m.security_hotspots}
+          color={m.security_hotspots && m.security_hotspots > 0 ? 'text-yellow-400' : 'text-green-400'}
+        />
+        <MetricTile
+          label="Code Smells"
+          value={m.code_smells}
+          color="text-gray-300"
+        />
+        <MetricTile
+          label="Coverage"
+          value={m.coverage != null ? `${m.coverage.toFixed(1)}` : null}
+          unit="%"
+          color={m.coverage != null && m.coverage >= 80 ? 'text-green-400' : 'text-yellow-400'}
+        />
+        <MetricTile
+          label="Duplication"
+          value={m.duplication_pct != null ? `${m.duplication_pct.toFixed(1)}` : null}
+          unit="%"
+          color={m.duplication_pct != null && m.duplication_pct <= 3 ? 'text-green-400' : 'text-yellow-400'}
+        />
+        <MetricTile label="Technical Debt" value={m.technical_debt} color="text-blue-400" />
+        <MetricTile
+          label="Lines of Code"
+          value={m.ncloc != null ? m.ncloc.toLocaleString('it-IT') : null}
+          color="text-gray-300"
+        />
+      </div>
+
+      {/* Failing quality gate conditions */}
+      {qg?.conditions && qg.conditions.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Failing Conditions</div>
+          <div className="space-y-1">
+            {qg.conditions.map((c, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm text-red-300 bg-red-500/5 border border-red-500/20 rounded-lg px-3 py-2">
+                <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                <span className="font-mono text-xs text-red-400">{c.metric}</span>
+                <span className="text-gray-400">actual: <strong>{c.actual}</strong></span>
+                {c.threshold && <span className="text-gray-500">threshold: {c.threshold}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top issues */}
+      {issues.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+            Top Issues — Bugs &amp; Vulnerabilities
+          </div>
+          <div className="space-y-2">
+            {issues.map((issue) => (
+              <div key={issue.key} className="flex items-start gap-3 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                <Bug className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-200 leading-snug">{issue.message}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-gray-500 font-mono">{issue.component}{issue.line ? `:${issue.line}` : ''}</span>
+                    <span className={clsx(
+                      'text-[9px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wide',
+                      SEVERITY_COLORS[issue.severity] ?? SEVERITY_COLORS['INFO']
+                    )}>
+                      {issue.severity}
+                    </span>
+                    <span className="text-[9px] text-gray-600 uppercase">{issue.type}</span>
                   </div>
                 </div>
               </div>

@@ -43,10 +43,10 @@ system_prompt: |
   ### Databases
   - AWS RDS → Azure Database for PostgreSQL/MySQL Flexible Server
   - AWS Aurora → Azure Database for PostgreSQL/MySQL Flexible Server
-  - AWS DynamoDB → Azure Cosmos DB (NoSQL API)
+  - AWS DynamoDB → MongoDB (self-hosted on Azure Container Apps) or Azure Cosmos DB (NoSQL API)
   - AWS ElastiCache → Azure Cache for Redis
   - GCP Cloud SQL → Azure Database for PostgreSQL/MySQL
-  - GCP Firestore → Azure Cosmos DB
+  - GCP Firestore → MongoDB (self-hosted on Azure Container Apps) or Azure Cosmos DB
 
   ### Messaging & Integration
   - AWS SQS → Azure Service Bus (queues)
@@ -92,6 +92,83 @@ system_prompt: |
   - **Technical Risk**: Data loss, downtime, integration failures
   - **Business Risk**: Revenue impact, compliance, SLA
   - **Operational Risk**: Team skill gaps, tooling availability
+
+  ## Effort Calculation Methodology
+  For every migration, compute a detailed effort breakdown using this formula:
+
+  **Base Person-Days per Component:**
+  - Compute service: 5 days/service
+  - Database: 10 days/database (+ 5 if schema migration needed)
+  - Messaging/queue: 4 days/service
+  - Storage: 3 days/bucket or share
+  - Networking/VNet: 8 days flat
+  - IAM/identity: 6 days flat
+  - Monitoring setup: 4 days flat
+  - CI/CD pipeline: 3 days/pipeline
+  - Testing & validation: 20% of total effort
+
+  **Strategy Multiplier:**
+  - Rehost (Lift & Shift): × 1.0
+  - Replatform (Lift & Reshape): × 1.5
+  - Refactor/Re-architect: × 3.0
+  - Hybrid (mix): weighted average
+
+  **Risk Multiplier:**
+  - Low risk: × 1.0
+  - Medium risk: × 1.3
+  - High risk: × 1.6
+
+  **Roles and Daily Rates (EUR):**
+  - Cloud Architect: €1,200/day — responsible for design and governance
+  - Cloud Engineer: €900/day — infrastructure implementation
+  - DevOps/Platform Engineer: €850/day — CI/CD, automation, IaC
+  - Application Developer: €750/day — code refactoring and testing
+  - Security Engineer: €1,000/day — security review and implementation
+  - Project Manager: €800/day — coordination, PMO reporting
+
+  **Standard Working Hours:**
+  - 1 person-day = 8 hours
+  - Round total hours to nearest 10
+
+  Include this `effort_detail` block in your JSON output under the key `effort_detail`:
+  ```json
+  {
+    "effort_detail": {
+      "total_person_days": <integer>,
+      "total_hours": <integer>,
+      "calculation_method": "<short explanation of formula used, e.g. '14 compute services × 5 days × Replatform 1.5 × Medium risk 1.3 + networking 8 days + testing 20%'>",
+      "assumptions": ["<assumption 1>", "<assumption 2>"],
+      "roles": [
+        {
+          "role": "Cloud Architect",
+          "allocation_pct": <0-100>,
+          "person_days": <number>,
+          "daily_rate_eur": 1200,
+          "total_eur": <number>
+        }
+      ],
+      "phases": [
+        {
+          "wave": 0,
+          "name": "Foundation",
+          "person_days": <number>,
+          "hours": <number>,
+          "focus": "<brief description>"
+        }
+      ],
+      "complexity_breakdown": [
+        {
+          "component": "<service or resource name>",
+          "strategy": "rehost|replatform|refactor",
+          "risk": "low|medium|high",
+          "base_days": <number>,
+          "final_days": <number>
+        }
+      ],
+      "total_cost_eur": <total labour cost in EUR>
+    }
+  }
+  ```
 
 temperature: 0.1
 max_tokens: 4096

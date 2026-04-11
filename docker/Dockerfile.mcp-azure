@@ -1,0 +1,52 @@
+# Azure MCP Server — @azure/mcp wrapped via supergateway for HTTP/SSE transport
+# Authentication: Azure Service Principal (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET)
+#   or Managed Identity in production.
+# SSE endpoint exposed at: http://mcp-azure:3333/sse  (Docker-internal)
+FROM node:22-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd libicu-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g supergateway@latest @azure/mcp@latest \
+    && npm cache clean --force \
+    && node -e " \
+        const fs = require('fs'); \
+        const f = '/usr/local/lib/node_modules/supergateway/dist/gateways/stdioToSse.js'; \
+        let c = fs.readFileSync(f, 'utf8'); \
+        c = c.replace( \
+            'await server.connect(sseTransport);', \
+            'try { await server.close(); } catch(_) {} try { server._transport = undefined; } catch(_) {} await server.connect(sseTransport);' \
+        ); \
+        fs.writeFileSync(f, c); \
+        console.log('Patched stdioToSse.js: close + reset _transport before connect'); \
+    "
+
+# Required for the .NET azmcp binary shipped inside @azure/mcp
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+
+EXPOSE 3333
+
+# Azure credentials — provided via compose.yml environment / .env
+# Leave empty to run in limited mode (doc/pricing tools still work)
+ENV AZURE_TENANT_ID=""
+ENV AZURE_CLIENT_ID=""
+ENV AZURE_CLIENT_SECRET=""
+ENV AZURE_SUBSCRIPTION_ID=""
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD nc -z localhost 3333 || exit 1
+
+# supergateway bridges stdio → SSE; backend connects to /sse.
+# The shell loop restarts supergateway immediately after each exit (crash or clean close),
+# giving each SSE session a fresh @azure/mcp child process and preventing the
+# "Already connected to a transport" error thrown by the MCP SDK on reconnect.
+CMD ["sh", "-c", \
+     "while true; do \
+        supergateway \
+          --stdio 'azmcp server start' \
+          --port 3333 \
+          --baseUrl http://mcp-azure:3333 \
+        || true; \
+        sleep 0.5; \
+      done"]

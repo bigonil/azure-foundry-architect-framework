@@ -6,11 +6,13 @@ import time
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.api.models.responses import HealthResponse
 from src.api.routes.analysis import router as analysis_router
+from src.api.routes.artifacts import router as artifacts_router
 from src.config.settings import get_settings
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -70,6 +72,7 @@ async def log_requests(request: Request, call_next):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(analysis_router)
+app.include_router(artifacts_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
@@ -87,6 +90,7 @@ async def health_check() -> HealthResponse:
             "migration_planner",
             "gap_analyzer",
             "waf_reviewer",
+            "quality_analyzer",
         ],
         foundry_connected=foundry_connected,
     )
@@ -106,11 +110,21 @@ async def root() -> dict:
             "migration_planner",
             "gap_analyzer",
             "waf_reviewer",
+            "quality_analyzer",
         ],
     }
 
 
 # ── Exception handlers ─────────────────────────────────────────────────────────
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    logger.error(f"422 Validation error on {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error(f"Unhandled exception on {request.url.path}: {exc}")

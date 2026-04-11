@@ -6,13 +6,22 @@ import {
   Search,
   History,
   BrainCircuit,
-  ChevronRight,
+  Map,
+  ShieldCheck,
 } from 'lucide-react'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/analysis', label: 'New Analysis', icon: Search },
+  { path: '/architecture', label: 'Architecture', icon: Map },
+  { path: '/quality', label: 'Code Quality', icon: ShieldCheck },
   { path: '/history', label: 'History', icon: History },
+]
+
+// MVP: only Code and Infra agents are active
+const agentBadges = [
+  { name: 'Code',  colors: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+  { name: 'Infra', colors: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -29,9 +38,14 @@ export default function Layout({ children }: { children: ReactNode }) {
               <BrainCircuit className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="font-semibold text-sm text-white">Architect</div>
-              <div className="text-xs text-gray-400">AI Framework</div>
+              <div className="font-semibold text-sm text-white">Efesto</div>
+              <div className="text-xs text-gray-400">AI Fabryc</div>
             </div>
+          </div>
+          {/* Demo badge */}
+          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30">
+            <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+            <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">MVP Mode</span>
           </div>
         </div>
 
@@ -59,16 +73,21 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wider">
             Active Agents
           </div>
-          <div className="flex flex-wrap gap-1">
-            {['Code', 'Infra', 'Cost', 'Migration', 'GAP', 'WAF'].map((a) => (
+          <div className="flex flex-wrap gap-1.5">
+            {agentBadges.map(({ name, colors }) => (
               <span
-                key={a}
-                className="px-2 py-0.5 text-xs bg-gray-800 text-gray-400 rounded-md border border-gray-700"
+                key={name}
+                className={clsx('px-2 py-0.5 text-xs font-medium rounded-md border', colors)}
               >
-                {a}
+                {name}
               </span>
             ))}
           </div>
+        </div>
+
+        {/* Version */}
+        <div className="px-4 pb-4 text-[10px] text-gray-600">
+          v1.0.0 · Azure AI Foundry
         </div>
       </aside>
 

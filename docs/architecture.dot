@@ -1,0 +1,221 @@
+digraph "Azure Foundry Architect Framework — Architecture" {
+    graph [
+        rankdir=TB
+        fontname="Helvetica"
+        fontsize=11
+        bgcolor="#F8F9FA"
+        pad=0.5
+        nodesep=0.5
+        ranksep=0.7
+        label="Azure Foundry Architect Framework\nArchitettura Infrastrutturale e Applicativa"
+        labelloc=t
+        labelfontsize=16
+        labelfontname="Helvetica Bold"
+    ]
+    node [fontname="Helvetica" fontsize=10 style="filled,rounded" shape=box]
+    edge [fontname="Helvetica" fontsize=9 color="#555555"]
+
+    // ═══════════════════════════════════════════════════════
+    //  USER
+    // ═══════════════════════════════════════════════════════
+    node_user [label="👤 Utente / Browser" fillcolor="#E8EAF6" color="#3F51B5" fontcolor="#1A237E" penwidth=2]
+
+    // ═══════════════════════════════════════════════════════
+    //  AZURE DEPLOYMENT
+    // ═══════════════════════════════════════════════════════
+    subgraph cluster_azure {
+        label="☁️  Azure Deployment  (compose.yml / infra/main.bicep)"
+        style="filled,rounded"
+        fillcolor="#E3F2FD"
+        color="#1565C0"
+        penwidth=2
+        fontname="Helvetica Bold"
+        fontsize=13
+
+        // ── Networking ──────────────────────────────────
+        subgraph cluster_vnet {
+            label="Azure Virtual Network\n(VNet + Subnets)"
+            style="filled,rounded"
+            fillcolor="#BBDEFB"
+            color="#1976D2"
+            fontsize=10
+
+            subgraph cluster_ca_subnet {
+                label="Container Apps Subnet"
+                style="dashed"
+                color="#1976D2"
+                fillcolor="#E3F2FD"
+
+                az_client [label="🌐 Client Container App\n(nginx + React/TS build)" fillcolor="#C8E6C9" color="#2E7D32"]
+                az_api [label="⚙️  API Container App\n(FastAPI uvicorn :8000)" fillcolor="#C8E6C9" color="#2E7D32"]
+            }
+
+            subgraph cluster_pe_subnet {
+                label="Private Endpoint Subnet"
+                style="dashed"
+                color="#1976D2"
+                fillcolor="#E3F2FD"
+
+                az_openai_pe [label="🔒 PE: Azure OpenAI" shape=diamond fillcolor="#FFF9C4" color="#F9A825" fontsize=9]
+                az_search_pe [label="🔒 PE: AI Search" shape=diamond fillcolor="#FFF9C4" color="#F9A825" fontsize=9]
+                az_mongo_pe  [label="🔒 PE: Cosmos DB" shape=diamond fillcolor="#FFF9C4" color="#F9A825" fontsize=9]
+                az_kv_pe     [label="🔒 PE: Key Vault" shape=diamond fillcolor="#FFF9C4" color="#F9A825" fontsize=9]
+            }
+        }
+
+        // ── Azure AI Services ────────────────────────────
+        subgraph cluster_ai {
+            label="Azure AI Services"
+            style="filled,rounded"
+            fillcolor="#F3E5F5"
+            color="#7B1FA2"
+            fontsize=10
+
+            az_foundry  [label="🧠 Azure AI Foundry Hub\n(Orchestration Hub)" fillcolor="#E1BEE7" color="#6A1B9A" penwidth=2]
+            az_openai   [label="💬 Azure OpenAI\ngpt-4o / gpt-4o-mini" fillcolor="#E1BEE7" color="#6A1B9A"]
+            az_search   [label="🔍 Azure AI Search\ncaf-guidelines | waf-pillars\nmigration-patterns" fillcolor="#E1BEE7" color="#6A1B9A"]
+        }
+
+        // ── Data ─────────────────────────────────────────
+        subgraph cluster_data_az {
+            label="Data Layer"
+            style="filled,rounded"
+            fillcolor="#FBE9E7"
+            color="#BF360C"
+            fontsize=10
+
+            az_mongo  [label="🍃 Azure Cosmos DB\n(MongoDB API)\nefesto-fabryc" fillcolor="#FFCCBC" color="#E64A19"]
+            az_redis  [label="⚡ Azure Cache\nfor Redis\n(Report cache 24h / Agent 48h)" fillcolor="#FFCCBC" color="#E64A19"]
+        }
+
+        // ── Security & Ops ───────────────────────────────
+        subgraph cluster_sec {
+            label="Security & Observability"
+            style="filled,rounded"
+            fillcolor="#F1F8E9"
+            color="#33691E"
+            fontsize=10
+
+            az_kv       [label="🔑 Key Vault\n(secrets & API keys)" fillcolor="#DCEDC8" color="#558B2F"]
+            az_acr      [label="📦 Container Registry\n(ACR)" fillcolor="#DCEDC8" color="#558B2F"]
+            az_monitor  [label="📊 Azure Monitor\n+ Log Analytics" fillcolor="#DCEDC8" color="#558B2F"]
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  LOCAL DEPLOYMENT
+    // ═══════════════════════════════════════════════════════
+    subgraph cluster_local {
+        label="🖥️  Local Deployment  (compose.local.yml + dev servers)"
+        style="filled,rounded"
+        fillcolor="#FFF8E1"
+        color="#F57F17"
+        penwidth=2
+        fontname="Helvetica Bold"
+        fontsize=13
+
+        loc_client [label="🌐 Frontend Dev Server\nVite :5173\n(React/TS hot reload)" fillcolor="#FFF9C4" color="#F9A825"]
+        loc_api    [label="⚙️  Backend Dev Server\nuvicorn --reload :8000\n(FastAPI Python)" fillcolor="#FFF9C4" color="#F9A825"]
+
+        subgraph cluster_docker_local {
+            label="Docker Compose (compose.local.yml)"
+            style="dashed"
+            color="#F57F17"
+            fillcolor="#FFFDE7"
+
+            loc_mongo [label="🍃 MongoDB :27017\n(mongo:7 container)\nefesto-fabryc" fillcolor="#FFCCBC" color="#E64A19"]
+            loc_redis [label="⚡ Redis :6379\n(redis:7-alpine)\n256MB LRU" fillcolor="#FFCCBC" color="#E64A19"]
+        }
+
+        loc_anthropic [label="💜 Anthropic API\n(Claude claude-opus-4-6)\nexternal SaaS" fillcolor="#EDE7F6" color="#4527A0" style="filled,dashed,rounded"]
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  SHARED APPLICATION LAYER (agents / tools)
+    // ═══════════════════════════════════════════════════════
+    subgraph cluster_app {
+        label="📦 Application Layer  (src/)"
+        style="filled,rounded"
+        fillcolor="#ECEFF1"
+        color="#546E7A"
+        penwidth=2
+        fontname="Helvetica Bold"
+        fontsize=13
+
+        subgraph cluster_agents {
+            label="AI Agents  (src/agents/)"
+            style="filled,rounded"
+            fillcolor="#E8EAF6"
+            color="#3F51B5"
+            fontsize=10
+
+            orch   [label="🎯 Orchestrator" fillcolor="#C5CAE9" color="#283593"]
+            agents [label="🔬 Specialized Agents\n• InfraAnalyzer\n• CodeAnalyzer\n• CostOptimizer\n• GapAnalyzer\n• MigrationPlanner\n• QualityAnalyzer\n• WafReviewer" fillcolor="#C5CAE9" color="#283593"]
+        }
+
+        subgraph cluster_tools {
+            label="Tools  (src/tools/)"
+            style="filled,rounded"
+            fillcolor="#E8F5E9"
+            color="#2E7D32"
+            fontsize=10
+
+            tools [label="🛠️  Tools\n• InfraParser (.tf/.bicep)\n• CodeScanner\n• PricingCalculator\n• SonarCloudClient" fillcolor="#A5D6A7" color="#1B5E20"]
+        }
+
+        api_layer [label="🚀 FastAPI App\nsrc/api/main.py\n/health | /api/analysis/*" fillcolor="#B0BEC5" color="#37474F" penwidth=2]
+        knowledge [label="📚 Knowledge Base\nsrc/knowledge/" fillcolor="#B0BEC5" color="#37474F"]
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  EXTERNAL
+    // ═══════════════════════════════════════════════════════
+    sonar [label="☁️  SonarCloud API\n(code quality)" fillcolor="#FFF3E0" color="#E65100" style="filled,dashed,rounded"]
+
+    // ═══════════════════════════════════════════════════════
+    //  AZURE EDGES
+    // ═══════════════════════════════════════════════════════
+    node_user -> az_client [label="HTTPS\n:443" color="#1565C0" penwidth=2]
+    az_client -> az_api    [label="REST\n/api/*" color="#1565C0"]
+    az_api    -> api_layer [label="deploys" style=dashed color="#888888"]
+
+    az_api -> az_openai_pe [label="OpenAI\nSDK" color="#7B1FA2"]
+    az_api -> az_search_pe [label="AI Search\nclient" color="#7B1FA2"]
+    az_api -> az_mongo_pe  [label="Motor\nasync" color="#BF360C"]
+    az_api -> az_redis     [label="redis-py" color="#BF360C"]
+    az_api -> az_kv_pe     [label="Managed\nIdentity" color="#2E7D32"]
+
+    az_openai_pe -> az_openai [style=dashed color="#7B1FA2"]
+    az_search_pe -> az_search [style=dashed color="#7B1FA2"]
+    az_mongo_pe  -> az_mongo  [style=dashed color="#BF360C"]
+    az_kv_pe     -> az_kv     [style=dashed color="#2E7D32"]
+
+    az_foundry -> az_openai [label="connects" color="#7B1FA2"]
+    az_foundry -> az_search [label="connects" color="#7B1FA2"]
+    az_foundry -> az_kv     [label="secrets" color="#2E7D32"]
+
+    az_acr -> az_client [label="pulls image" style=dashed color="#558B2F"]
+    az_acr -> az_api    [label="pulls image" style=dashed color="#558B2F"]
+    az_api -> az_monitor [label="logs &\nmetrics" style=dashed color="#558B2F"]
+    az_client -> az_monitor [label="logs" style=dashed color="#558B2F"]
+
+    // ═══════════════════════════════════════════════════════
+    //  LOCAL EDGES
+    // ═══════════════════════════════════════════════════════
+    node_user -> loc_client [label="HTTP\n:5173" color="#F57F17" penwidth=2]
+    loc_client -> loc_api   [label="REST\n/api/*" color="#F57F17"]
+    loc_api -> api_layer    [label="deploys" style=dashed color="#888888"]
+
+    loc_api -> loc_mongo    [label="Motor\nasync" color="#E64A19"]
+    loc_api -> loc_redis    [label="redis-py" color="#E64A19"]
+    loc_api -> loc_anthropic [label="Anthropic\nSDK" color="#4527A0"]
+
+    // ═══════════════════════════════════════════════════════
+    //  APP LAYER INTERNAL EDGES
+    // ═══════════════════════════════════════════════════════
+    api_layer -> orch   [color="#3F51B5" penwidth=2]
+    orch -> agents      [label="dispatches" color="#3F51B5"]
+    agents -> tools     [label="uses" color="#2E7D32"]
+    agents -> knowledge [label="reads" color="#546E7A"]
+    tools -> sonar      [label="HTTP API" style=dashed color="#E65100"]
+}

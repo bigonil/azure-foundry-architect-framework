@@ -1,10 +1,10 @@
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36" version="29.6.6">
-  <diagram id="afaf-architecture" name="Azure Foundry Architect Framework">
+  <diagram id="afaf-architecture" name="Efesto — AI Fabryc">
     <mxGraphModel dx="672" dy="332" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1200" math="0" shadow="1">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontStyle=1;fontColor=#0078D4;" value="Azure Foundry Architect Framework — Multi-Agent Architecture" vertex="1">
+        <mxCell id="2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontStyle=1;fontColor=#0078D4;" value="Efesto — AI Fabryc — Multi-Agent Architecture" vertex="1">
           <mxGeometry height="40" width="1860" x="20" y="15" as="geometry" />
         </mxCell>
         <mxCell id="10" parent="1" style="swimlane;fontStyle=1;fontSize=11;startSize=28;fillColor=#E3F2FD;strokeColor=#2496ED;strokeWidth=2;rounded=1;arcSize=3;" value="Local Development (Docker Compose)" vertex="1">
@@ -79,10 +79,10 @@
         <mxCell id="41" parent="30" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#0D47A1;strokeColor=#002171;fontColor=#ffffff;fontSize=10;fontStyle=1;" value="📋  Final Report Synthesis — Executive Summary · Maturity Score · Top 10 Actions · Migration Roadmap · Cost Savings" vertex="1">
           <mxGeometry height="55" width="700" x="20" y="490" as="geometry" />
         </mxCell>
-        <mxCell id="42" parent="30" style="shape=mxgraph.azure2.azure-cosmos-db;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure Cosmos DB&#xa;State &amp; Reports" vertex="1">
+        <mxCell id="42" parent="30" style="shape=mxgraph.docker.docker;fillColor=#4DB33D;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="MongoDB 7&#xa;State &amp; Reports" vertex="1">
           <mxGeometry height="65" width="65" x="20" y="590" as="geometry" />
         </mxCell>
-        <mxCell id="42b" parent="30" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#0078D4;fontSize=8;" value="Container: sessions (7d TTL)&#xa;Container: reports (30d TTL)" vertex="1">
+        <mxCell id="42b" parent="30" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4DB33D;fontSize=8;" value="Collection: sessions (7d TTL)&#xa;Collection: reports (30d TTL)" vertex="1">
           <mxGeometry height="40" width="200" x="100" y="590" as="geometry" />
         </mxCell>
         <mxCell id="43" parent="30" style="shape=mxgraph.azure2.key-vaults;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Key Vault" vertex="1">
@@ -160,7 +160,7 @@
         <mxCell id="60" parent="20" style="swimlane;fontStyle=1;fontSize=10;startSize=24;fillColor=#FFF8E1;strokeColor=#F57F17;strokeWidth=2;rounded=1;arcSize=3;" value="Data Layer" vertex="1">
           <mxGeometry height="230" width="380" x="775" y="515" as="geometry" />
         </mxCell>
-        <mxCell id="61" parent="60" style="shape=mxgraph.azure2.azure-cosmos-db;fillColor=#0078D4;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="Azure Cosmos DB&#xa;cosmos-afaf-dev" vertex="1">
+        <mxCell id="61" parent="60" style="shape=mxgraph.docker.docker;fillColor=#4DB33D;strokeColor=none;html=1;align=center;verticalLabelPosition=bottom;labelPosition=center;verticalAlign=top;fontColor=#000000;fontSize=9;" value="MongoDB 7&#xa;ca-mongo-afaf-dev" vertex="1">
           <mxGeometry height="70" width="70" x="30" y="45" as="geometry" />
         </mxCell>
         <mxCell id="61b" parent="60" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=8;fontColor=#555555;" value="Serverless (dev/staging)&#xa;Provisioned + ZRS (prod)&#xa;Continuous backup (prod)" vertex="1">

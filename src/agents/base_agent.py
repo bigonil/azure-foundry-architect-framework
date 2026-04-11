@@ -1,9 +1,19 @@
 """
 Base agent class for all specialized agents.
-Uses Azure AI Foundry Agent Service via azure-ai-projects SDK.
+
+Execution modes:
+  - anthropic  : Uses Anthropic API with Claude claude-opus-4-6 (local/default mode)
+  - azure      : Uses Azure OpenAI direct chat completion
+  - foundry    : Uses Azure AI Foundry Agent Service (full persistence + threading)
+
+Mode is selected by settings.llm_provider + use_foundry_mode flag.
 """
+from __future__ import annotations
+
 import asyncio
+import json
 import logging
+import re
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -11,15 +21,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import (
-    AgentThread,
-    MessageRole,
-    RunStatus,
-    ToolDefinition,
-)
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
-from openai import AzureOpenAI
 
 from src.config.settings import get_settings
 
@@ -38,6 +39,8 @@ class AgentResult:
         data: dict[str, Any],
         duration_seconds: float,
         error: str | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
     ):
         self.agent_name = agent_name
         self.session_id = session_id
@@ -46,6 +49,18 @@ class AgentResult:
         self.duration_seconds = duration_seconds
         self.error = error
         self.timestamp = time.time()
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+    @property
+    def cost_eur(self) -> float:
+        """Estimated cost in EUR based on current Anthropic pricing."""
+        settings = get_settings()
+        cost_usd = (
+            self.input_tokens * settings.claude_input_price_per_1m_usd / 1_000_000
+            + self.output_tokens * settings.claude_output_price_per_1m_usd / 1_000_000
+        )
+        return round(cost_usd * settings.eur_usd_rate, 6)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +71,9 @@ class AgentResult:
             "duration_seconds": self.duration_seconds,
             "error": self.error,
             "timestamp": self.timestamp,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_eur": self.cost_eur,
         }
 
 
@@ -63,18 +81,19 @@ class BaseAgent(ABC):
     """
     Abstract base for all specialist agents.
 
-    Two execution modes:
-    - Foundry Mode: Uses Azure AI Foundry Agent Service (full persistence, threading)
-    - Direct Mode: Direct Azure OpenAI chat completion (lower latency, simpler)
+    Three execution modes (selected automatically based on settings):
+    - Anthropic mode  : Claude claude-opus-4-6 via Anthropic API (local, default)
+    - Direct mode     : Azure OpenAI chat completion (lower latency)
+    - Foundry mode    : Azure AI Foundry Agent Service (full persistence, threading)
     """
 
-    def __init__(self, use_foundry_mode: bool = True):
+    def __init__(self, use_foundry_mode: bool = False):
         self.settings = get_settings()
         self.use_foundry_mode = use_foundry_mode
         self._prompt_config = self._load_prompt_config()
-        self._client: AIProjectClient | None = None
-        self._openai_client: AzureOpenAI | None = None
-        self._agent_id: str | None = None
+        self._anthropic_client: Any | None = None
+        self._openai_client: Any | None = None
+        self._foundry_client: Any | None = None
 
     def _load_prompt_config(self) -> dict[str, Any]:
         prompt_file = PROMPTS_DIR / f"{self.agent_name}.yaml"
@@ -92,6 +111,8 @@ class BaseAgent(ABC):
 
     @property
     def model(self) -> str:
+        if self.settings.llm_provider == "anthropic":
+            return self.settings.anthropic_model
         return self._prompt_config.get(
             "model", self.settings.azure_openai_deployment_gpt4o
         )
@@ -104,40 +125,10 @@ class BaseAgent(ABC):
     def max_tokens(self) -> int:
         return self._prompt_config.get("max_tokens", self.settings.agent_max_tokens)
 
-    def _get_credential(self):
-        if self.settings.use_managed_identity:
-            return ManagedIdentityCredential()
-        return DefaultAzureCredential()
-
-    def _get_foundry_client(self) -> AIProjectClient:
-        if not self._client:
-            self._client = AIProjectClient.from_connection_string(
-                conn_str=self.settings.azure_ai_project_connection_string,
-                credential=self._get_credential(),
-            )
-        return self._client
-
-    def _get_openai_client(self) -> AzureOpenAI:
-        if not self._openai_client:
-            kwargs = {
-                "azure_endpoint": self.settings.azure_openai_endpoint,
-                "api_version": self.settings.azure_openai_api_version,
-            }
-            if self.settings.azure_openai_api_key:
-                kwargs["api_key"] = self.settings.azure_openai_api_key
-            else:
-                from azure.identity import get_bearer_token_provider
-                token_provider = get_bearer_token_provider(
-                    self._get_credential(),
-                    "https://cognitiveservices.azure.com/.default",
-                )
-                kwargs["azure_ad_token_provider"] = token_provider
-            self._openai_client = AzureOpenAI(**kwargs)
-        return self._openai_client
-
-    @abstractmethod
-    def get_tools(self) -> list[ToolDefinition]:
-        """Return the list of tools this agent can use."""
+    # ── Tool registry (subclasses override; not used in Anthropic mode) ────────
+    def get_tools(self) -> list:
+        """Return tools for Foundry/Azure modes. Empty in Anthropic local mode."""
+        return []
 
     @abstractmethod
     def build_user_message(self, context: dict[str, Any]) -> str:
@@ -147,21 +138,89 @@ class BaseAgent(ABC):
     def parse_response(self, raw_response: str) -> dict[str, Any]:
         """Parse the agent's raw text response into structured data."""
 
-    async def run(self, context: dict[str, Any], session_id: str | None = None) -> AgentResult:
+    # ── JSON extraction helper ─────────────────────────────────────────────────
+    @staticmethod
+    def _extract_json(raw: str) -> str:
+        """
+        Robustly extract a JSON object or array from Claude/GPT responses.
+        Handles: markdown code fences, leading text, trailing commentary.
+        """
+        raw = raw.strip()
+
+        # 1. Try to strip ```json ... ``` or ``` ... ``` fences
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]+?)```", raw)
+        if fence_match:
+            candidate = fence_match.group(1).strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # 2. Find the first { or [ and extract the balanced JSON block
+        for opener, closer in [('{', '}'), ('[', ']')]:
+            start = raw.find(opener)
+            if start == -1:
+                continue
+            depth = 0
+            in_string = False
+            escape_next = False
+            for i, ch in enumerate(raw[start:], start):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == '\\' and in_string:
+                    escape_next = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == opener:
+                    depth += 1
+                elif ch == closer:
+                    depth -= 1
+                    if depth == 0:
+                        candidate = raw[start:i + 1]
+                        try:
+                            json.loads(candidate)
+                            return candidate
+                        except json.JSONDecodeError:
+                            break  # malformed, try next opener
+
+        # 3. Return raw as-is and let parse_response handle the error
+        return raw
+
+    # ── Main entrypoint ────────────────────────────────────────────────────────
+    async def run(
+        self,
+        context: dict[str, Any],
+        session_id: str | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ) -> AgentResult:
         """Execute the agent with the given context."""
         session_id = session_id or str(uuid.uuid4())
         start_time = time.time()
 
-        logger.info(f"[{self.agent_name}] Starting analysis for session {session_id}")
+        logger.info(f"[{self.agent_name}] Starting ({self.settings.llm_provider} mode) — session {session_id}")
 
         try:
-            if self.use_foundry_mode:
+            in_tok = out_tok = 0
+            if self.settings.llm_provider == "anthropic":
+                result_data, in_tok, out_tok = await self._run_anthropic(
+                    context, session_id, mcp_servers=mcp_servers or []
+                )
+            elif self.use_foundry_mode:
                 result_data = await self._run_foundry(context, session_id)
             else:
-                result_data = await self._run_direct(context, session_id)
+                result_data = await self._run_azure_direct(context, session_id)
 
             duration = time.time() - start_time
-            logger.info(f"[{self.agent_name}] Completed in {duration:.1f}s")
+            logger.info(
+                f"[{self.agent_name}] Completed in {duration:.1f}s "
+                f"— tokens: {in_tok}↑ {out_tok}↓"
+            )
 
             return AgentResult(
                 agent_name=self.agent_name,
@@ -169,11 +228,13 @@ class BaseAgent(ABC):
                 status="success",
                 data=result_data,
                 duration_seconds=duration,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
             )
 
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"[{self.agent_name}] Failed after {duration:.1f}s: {e}")
+            logger.error(f"[{self.agent_name}] Failed after {duration:.1f}s: {e}", exc_info=True)
             return AgentResult(
                 agent_name=self.agent_name,
                 session_id=session_id,
@@ -183,50 +244,91 @@ class BaseAgent(ABC):
                 error=str(e),
             )
 
-    async def _run_foundry(self, context: dict[str, Any], session_id: str) -> dict[str, Any]:
-        """Execute via Azure AI Foundry Agent Service (with persistence and threading)."""
-        client = self._get_foundry_client()
+    # ── Anthropic mode (local) ─────────────────────────────────────────────────
+    def _get_anthropic_client(self) -> Any:
+        if self._anthropic_client is None:
+            import anthropic  # lazy import
+            self._anthropic_client = anthropic.AsyncAnthropic(
+                api_key=self.settings.anthropic_api_key or None  # uses ANTHROPIC_API_KEY env var if empty
+            )
+        return self._anthropic_client
 
-        # Create or reuse agent
-        agent = client.agents.create_agent(
-            model=self.model,
-            name=f"{self.agent_name}-{session_id[:8]}",
-            instructions=self.system_prompt,
-            tools=self.get_tools(),
-            temperature=self.temperature,
+    async def _run_anthropic(
+        self,
+        context: dict[str, Any],
+        session_id: str,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any], int, int]:
+        """Execute via Anthropic API (Claude claude-opus-4-6).
+
+        Returns (parsed_data, input_tokens, output_tokens).
+        When enabled URL-based MCP servers are provided, uses the Anthropic
+        MCP client beta (betas=["mcp-client-2025-04-04"]).
+        """
+        import anthropic  # lazy import — ensures clean error if not installed
+
+        client = self._get_anthropic_client()
+        system = (
+            self.system_prompt
+            + "\n\nCRITICAL: You MUST respond with ONLY valid JSON. No markdown, no explanation, no code fences. "
+            "Start your response directly with { and end with }."
         )
-        self._agent_id = agent.id
+        user_message = self.build_user_message(context)
+
+        # MCP enrichment is handled exclusively by McpEnrichmentAgent via local SSE client.
+        # Specialist agents (code_analyzer, infra_analyzer, cost_optimizer, …) receive
+        # MCP enrichment data already injected into context — they never call MCP directly.
+        # The Anthropic MCP beta is NOT used: local Docker URLs are unreachable from
+        # Anthropic's cloud infrastructure.
 
         try:
-            thread: AgentThread = client.agents.create_thread()
-            client.agents.create_message(
-                thread_id=thread.id,
-                role=MessageRole.USER,
-                content=self.build_user_message(context),
+            response = await client.messages.create(
+                model=self.settings.anthropic_model,
+                max_tokens=self.max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
             )
+            raw = response.content[0].text
 
-            run = client.agents.create_and_process_run(
-                thread_id=thread.id,
-                agent_id=agent.id,
+        except anthropic.AuthenticationError:
+            raise RuntimeError(
+                "Anthropic API key invalid or missing. "
+                "Set ANTHROPIC_API_KEY in .env or environment."
             )
+        except anthropic.RateLimitError:
+            raise RuntimeError("Anthropic rate limit hit. Please wait and retry.")
 
-            if run.status == RunStatus.FAILED:
-                raise RuntimeError(f"Agent run failed: {run.last_error}")
+        in_tok: int = getattr(response.usage, "input_tokens", 0)
+        out_tok: int = getattr(response.usage, "output_tokens", 0)
 
-            # Retrieve final assistant message
-            messages = client.agents.list_messages(thread_id=thread.id)
-            assistant_messages = [m for m in messages if m.role == MessageRole.AGENT]
-            raw_response = assistant_messages[-1].content[0].text.value if assistant_messages else ""
+        logger.debug(f"[{self.agent_name}] Raw response length: {len(raw)} chars")
+        clean = self._extract_json(raw)
+        return self.parse_response(clean), in_tok, out_tok
 
-            return self.parse_response(raw_response)
+    # ── Azure Direct mode ──────────────────────────────────────────────────────
+    def _get_openai_client(self) -> Any:
+        if self._openai_client is None:
+            from openai import AzureOpenAI  # lazy import
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
-        finally:
-            client.agents.delete_agent(agent.id)
+            kwargs: dict[str, Any] = {
+                "azure_endpoint": self.settings.azure_openai_endpoint,
+                "api_version": self.settings.azure_openai_api_version,
+            }
+            if self.settings.azure_openai_api_key:
+                kwargs["api_key"] = self.settings.azure_openai_api_key
+            else:
+                token_provider = get_bearer_token_provider(
+                    DefaultAzureCredential(),
+                    "https://cognitiveservices.azure.com/.default",
+                )
+                kwargs["azure_ad_token_provider"] = token_provider
+            self._openai_client = AzureOpenAI(**kwargs)
+        return self._openai_client
 
-    async def _run_direct(self, context: dict[str, Any], session_id: str) -> dict[str, Any]:
-        """Execute via direct Azure OpenAI chat completion (lower latency mode)."""
+    async def _run_azure_direct(self, context: dict[str, Any], session_id: str) -> dict[str, Any]:
+        """Execute via direct Azure OpenAI chat completion."""
         client = self._get_openai_client()
-
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
@@ -241,6 +343,60 @@ class BaseAgent(ABC):
                 response_format={"type": "json_object"},
             ),
         )
+        raw = response.choices[0].message.content or ""
+        return self.parse_response(raw)
 
-        raw_response = response.choices[0].message.content or ""
-        return self.parse_response(raw_response)
+    # ── Azure Foundry mode ─────────────────────────────────────────────────────
+    def _get_foundry_client(self) -> Any:
+        if self._foundry_client is None:
+            from azure.ai.projects import AIProjectClient  # lazy import
+            from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+
+            credential = (
+                ManagedIdentityCredential()
+                if self.settings.use_managed_identity
+                else DefaultAzureCredential()
+            )
+            self._foundry_client = AIProjectClient.from_connection_string(
+                conn_str=self.settings.azure_ai_project_connection_string,
+                credential=credential,
+            )
+        return self._foundry_client
+
+    async def _run_foundry(self, context: dict[str, Any], session_id: str) -> dict[str, Any]:
+        """Execute via Azure AI Foundry Agent Service (sync SDK wrapped in executor)."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._run_foundry_sync, context, session_id)
+
+    def _run_foundry_sync(self, context: dict[str, Any], session_id: str) -> dict[str, Any]:
+        """Synchronous Foundry execution (called from thread pool)."""
+        from azure.ai.projects.models import MessageRole, RunStatus  # lazy import
+
+        client = self._get_foundry_client()
+        agent = client.agents.create_agent(
+            model=self.model,
+            name=f"{self.agent_name}-{session_id[:8]}",
+            instructions=self.system_prompt,
+            tools=self.get_tools(),
+            temperature=self.temperature,
+        )
+        try:
+            thread = client.agents.create_thread()
+            client.agents.create_message(
+                thread_id=thread.id,
+                role=MessageRole.USER,
+                content=self.build_user_message(context),
+            )
+            run = client.agents.create_and_process_run(
+                thread_id=thread.id,
+                agent_id=agent.id,
+            )
+            if run.status == RunStatus.FAILED:
+                raise RuntimeError(f"Foundry agent run failed: {run.last_error}")
+
+            messages = client.agents.list_messages(thread_id=thread.id)
+            assistant_messages = [m for m in messages if m.role == MessageRole.AGENT]
+            raw = assistant_messages[-1].content[0].text.value if assistant_messages else ""
+            return self.parse_response(self._extract_json(raw))
+        finally:
+            client.agents.delete_agent(agent.id)

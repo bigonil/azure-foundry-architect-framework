@@ -1,7 +1,7 @@
 // ============================================================================
 // Azure Foundry Architect Framework — Main Infrastructure
 // Follows: CAF Landing Zone + WAF best practices
-// Resources: AI Foundry Hub, OpenAI, AI Search, Cosmos DB, Container Apps
+// Resources: AI Foundry Hub, OpenAI, AI Search, MongoDB, Container Apps
 // ============================================================================
 
 targetScope = 'subscription'
@@ -95,8 +95,21 @@ module aiSearch 'modules/ai-search.bicep' = {
   }
 }
 
-module cosmosDb 'modules/cosmosdb.bicep' = {
-  name: 'cosmosdb'
+module containerAppsEnv 'modules/container-apps-env.bicep' = {
+  name: 'container-apps-env'
+  scope: rg
+  params: {
+    prefix: prefix
+    environmentName: environmentName
+    location: location
+    tags: tags
+    subnetId: networking.outputs.containerAppsSubnetId
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+module mongoDB 'modules/mongodb.bicep' = {
+  name: 'mongodb'
   scope: rg
   params: {
     prefix: prefix
@@ -104,6 +117,7 @@ module cosmosDb 'modules/cosmosdb.bicep' = {
     location: location
     tags: tags
     subnetId: networking.outputs.privateEndpointSubnetId
+    containerAppsEnvId: containerAppsEnv.outputs.environmentId
   }
 }
 
@@ -130,13 +144,12 @@ module containerApps 'modules/container-apps.bicep' = {
     environmentName: environmentName
     location: location
     tags: tags
-    subnetId: networking.outputs.containerAppsSubnetId
-    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
     keyVaultName: keyVault.outputs.keyVaultName
     openAiEndpoint: openAi.outputs.endpoint
     aiSearchEndpoint: aiSearch.outputs.endpoint
-    cosmosDbEndpoint: cosmosDb.outputs.endpoint
     aiFoundryConnectionString: aiFoundry.outputs.connectionString
+    containerAppsEnvId: containerAppsEnv.outputs.environmentId
+    acrLoginServer: containerAppsEnv.outputs.acrLoginServer
   }
 }
 
@@ -146,5 +159,5 @@ output apiUrl string = containerApps.outputs.apiUrl
 output aiFoundryConnectionString string = aiFoundry.outputs.connectionString
 output openAiEndpoint string = openAi.outputs.endpoint
 output aiSearchEndpoint string = aiSearch.outputs.endpoint
-output cosmosDbEndpoint string = cosmosDb.outputs.endpoint
+output mongoDbAppName string = mongoDB.outputs.mongoAppName
 output keyVaultUrl string = keyVault.outputs.keyVaultUrl

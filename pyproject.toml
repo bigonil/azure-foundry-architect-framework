@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "azure-foundry-architect-framework"
@@ -9,43 +9,52 @@ description = "Multi-agent framework for cloud architecture analysis, migration 
 requires-python = ">=3.11"
 
 dependencies = [
-    # Azure AI
-    "azure-ai-projects>=1.0.0b10",
-    "azure-ai-agents>=1.0.0b4",
-    "azure-identity>=1.17.0",
-    "azure-search-documents>=11.6.0",
-    "azure-cosmos>=4.7.0",
-    "azure-keyvault-secrets>=4.8.0",
-    "azure-monitor-opentelemetry>=1.6.0",
-    # Semantic Kernel
-    "semantic-kernel>=1.16.0",
-    # OpenAI
-    "openai>=1.55.0",
-    # API
+    # ── Anthropic (primary LLM for local mode) ────────────────────────────────
+    "anthropic>=0.50.0",
+    # ── API ───────────────────────────────────────────────────────────────────
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "python-multipart>=0.0.12",
-    # Tools
+    # ── Database ──────────────────────────────────────────────────────────────
+    "motor>=3.6.0",
+    "redis>=5.0.0",
+    # ── Tools & Utilities ─────────────────────────────────────────────────────
     "httpx>=0.27.0",
     "aiofiles>=24.1.0",
     "python-dotenv>=1.0.1",
     "PyYAML>=6.0.2",
     "rich>=13.9.0",
     "structlog>=24.4.0",
-    # Code Analysis
-    "tree-sitter>=0.23.0",
+    # ── Code Analysis ─────────────────────────────────────────────────────────
     "gitpython>=3.1.43",
-    # IaC Parsing
-    "hcl2>=4.3.4",
+    # ── IaC Parsing ───────────────────────────────────────────────────────────
+    "python-hcl2>=4.3.0",
     "jsonschema>=4.23.0",
-    # Reporting
+    # ── Reporting ─────────────────────────────────────────────────────────────
     "jinja2>=3.1.4",
-    "weasyprint>=62.3",
+    # ── MCP (local SSE client for Docker-hosted MCP servers) ─────────────────
+    "mcp[cli]>=1.0.0",
+    # ── Object Storage ────────────────────────────────────────────────────────
+    # boto3: MinIO (S3-compatible) — local development
+    # azure-storage-blob: Azure Blob Storage — production
+    "boto3>=1.35.0",
+    "azure-storage-blob>=12.22.0",
 ]
 
 [project.optional-dependencies]
+azure = [
+    # Azure AI (production mode — not needed for local development)
+    "azure-ai-projects>=1.0.0b10",
+    "azure-ai-agents>=1.0.0b4",
+    "azure-identity>=1.17.0",
+    "azure-search-documents>=11.6.0",
+    "azure-keyvault-secrets>=4.8.0",
+    "azure-monitor-opentelemetry>=1.6.0",
+    "semantic-kernel>=1.16.0",
+    "openai>=1.55.0",
+]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
