@@ -8,11 +8,13 @@ import {
   BrainCircuit,
   Map,
   ShieldCheck,
+  Zap,
 } from 'lucide-react'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/analysis', label: 'New Analysis', icon: Search },
+  { path: '/performance', label: 'Performance', icon: Zap },
   { path: '/architecture', label: 'Architecture', icon: Map },
   { path: '/quality', label: 'Code Quality', icon: ShieldCheck },
   { path: '/history', label: 'History', icon: History },

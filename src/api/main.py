@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from src.api.models.responses import HealthResponse
 from src.api.routes.analysis import router as analysis_router
 from src.api.routes.artifacts import router as artifacts_router
+from src.api.routes.performance import router as performance_router
 from src.config.settings import get_settings
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ async def log_requests(request: Request, call_next):
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(analysis_router)
 app.include_router(artifacts_router)
+app.include_router(performance_router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
@@ -119,9 +121,22 @@ async def root() -> dict:
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.error(f"422 Validation error on {request.url.path}: {exc.errors()}")
+    # Convert errors to JSON-serializable format
+    errors = []
+    for error in exc.errors():
+        error_dict = {
+            "loc": error.get("loc", []),
+            "msg": error.get("msg", ""),
+            "type": error.get("type", ""),
+        }
+        # Convert ctx values to strings if present
+        if "ctx" in error:
+            error_dict["ctx"] = {k: str(v) for k, v in error["ctx"].items()}
+        errors.append(error_dict)
+    
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors()},
+        content={"detail": errors},
     )
 
 
