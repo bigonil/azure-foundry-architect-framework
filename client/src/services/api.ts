@@ -504,18 +504,3 @@ export const analysisApi = {
     return api.get<SessionStatus[]>('/analysis/')
   },
 }
-
-// ── Performance API ───────────────────────────────────────────────────────────
-export const performanceApi = {
-  listSessions: async () => {
-    return api.get<SessionStatus[]>('/performance/')
-  },
-
-  getReport: async (sessionId: string) => {
-    return api.get<any>(`/performance/${sessionId}`)
-  },
-
-  getStatus: async (sessionId: string) => {
-    return api.get<SessionStatus>(`/performance/${sessionId}/status`)
-  },
-}
