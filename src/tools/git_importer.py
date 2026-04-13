@@ -85,23 +85,49 @@ def _build_devops_clone_url(org_url: str, project: str, repo: str, token: str) -
 
 async def _run_git(*args: str, cwd: str | None = None) -> None:
     """Run a git sub-command asynchronously; raises RuntimeError on failure."""
-    cmd = ["git", *args]
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    import shutil
+    import subprocess
+    
+    # Find git executable (handles Windows where 'git' might not work but 'git.exe' does)
+    git_cmd = shutil.which("git")
+    if not git_cmd:
+        raise RuntimeError("git command not found. Please ensure Git is installed and in PATH.")
+    
+    cmd = [git_cmd, *args]
+    logger.info(f"Running git command: {git_cmd} {' '.join(args)} (cwd={cwd})")
+    
+    # Use subprocess.run in a thread to avoid Windows asyncio issues
+    def _run_sync():
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=cwd,
+                capture_output=True,
+                timeout=_CLONE_TIMEOUT,
+                check=False,
+            )
+            return result
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"git {args[0]} timed out after {_CLONE_TIMEOUT}s")
+        except Exception as e:
+            raise RuntimeError(f"Failed to run git: {type(e).__name__}: {str(e)}")
+    
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_CLONE_TIMEOUT)
-    except asyncio.TimeoutError:
-        proc.kill()
-        raise RuntimeError(f"git {args[0]} timed out after {_CLONE_TIMEOUT}s")
-
-    if proc.returncode != 0:
+        result = await asyncio.to_thread(_run_sync)
+    except RuntimeError:
+        raise
+    except Exception as e:
+        error_msg = f"Failed to start git process: {type(e).__name__}: {str(e)}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    
+    if result.returncode != 0:
         # Redact tokens from error messages before logging
-        err_text = re.sub(r"https?://[^@]+@", "https://<redacted>@", stderr.decode())
-        raise RuntimeError(f"git {args[0]} failed (exit {proc.returncode}): {err_text.strip()}")
+        err_text = re.sub(r"https?://[^@]+@", "https://<redacted>@", result.stderr.decode())
+        stdout_text = result.stdout.decode() if result.stdout else ""
+        full_error = f"{err_text.strip()}\n{stdout_text.strip()}".strip()
+        logger.error(f"git {args[0]} failed: {full_error}")
+        raise RuntimeError(f"git {args[0]} failed (exit {result.returncode}): {full_error}")
 
 
 def _read_folder(root: Path, sub_folder: str, allowed_exts: frozenset[str]) -> list[dict[str, str]]:

@@ -8,6 +8,8 @@ import ReportPage from './pages/ReportPage'
 import HistoryPage from './pages/HistoryPage'
 import ArchitecturePage from './pages/ArchitecturePage'
 import QualityPage from './pages/QualityPage'
+import PerformancePage from './pages/PerformancePage'
+import PerformanceReportPage from './pages/PerformanceReportPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +25,8 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/analysis" element={<AnalysisPage />} />
+            <Route path="/performance" element={<PerformancePage />} />
+            <Route path="/performance/report/:sessionId" element={<PerformanceReportPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
             <Route path="/quality" element={<QualityPage />} />
             <Route path="/report/:sessionId" element={<ReportPage />} />

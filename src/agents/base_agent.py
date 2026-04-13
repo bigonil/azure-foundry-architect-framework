@@ -97,7 +97,7 @@ class BaseAgent(ABC):
 
     def _load_prompt_config(self) -> dict[str, Any]:
         prompt_file = PROMPTS_DIR / f"{self.agent_name}.yaml"
-        with open(prompt_file) as f:
+        with open(prompt_file, encoding='utf-8') as f:
             return yaml.safe_load(f)
 
     @property
